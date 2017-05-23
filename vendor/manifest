@@ -27,6 +27,15 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/cyverse-de/go-events/ping",
+			"repository": "https://github.com/cyverse-de/go-events",
+			"vcs": "git",
+			"revision": "71c6103a00b48ed87c4848530b5244b051b5e75c",
+			"branch": "master",
+			"path": "/ping",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/cyverse-de/logcabin",
 			"repository": "https://github.com/cyverse-de/logcabin",
 			"vcs": "git",

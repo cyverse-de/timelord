@@ -2,20 +2,26 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/cyverse-de/configurate"
+	"github.com/cyverse-de/go-events/ping"
 	"github.com/cyverse-de/messaging"
 	"github.com/cyverse-de/timelord/queries"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"github.com/streadway/amqp"
 
 	_ "github.com/lib/pq"
 )
+
+const pingKey = "events.timelord.ping"
+const pongKey = "events.timelord.pong"
 
 const defaultConfig = `db:
   uri: "db:5432"
@@ -72,6 +78,24 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 	}
 
 	return nil
+}
+
+// Ping handles incoming ping requests.
+func Ping(client *messaging.Client) func(delivery amqp.Delivery) {
+	return func(delivery amqp.Delivery) {
+		logger.Info("Received ping")
+
+		out, err := json.Marshal(&ping.Pong{})
+		if err != nil {
+			logger.Error(err)
+		}
+
+		logger.Info("Sent pong")
+
+		if err = client.Publish(pongKey, out); err != nil {
+			logger.Error(err)
+		}
+	}
 }
 
 func action(db *sql.DB, client *messaging.Client, cb enforcer) error {
@@ -135,6 +159,26 @@ func main() {
 		log.Fatal(err)
 	}
 	defer client.Close()
+
+	go client.Listen()
+
+	exchange := cfg.GetString("amqp.exchange.name")
+	if exchange == "" {
+		logger.Error("amqp.exchange.name was empty")
+	}
+
+	exchangeType := cfg.GetString("amqp.exchange.type")
+	if exchangeType == "" {
+		logger.Error("amqp.exchange.type was empty")
+	}
+
+	client.AddConsumer(
+		exchange,
+		exchangeType,
+		"timelord",
+		pingKey,
+		Ping(client),
+	)
 
 	// make sure we can publish over the configured amqp exchange
 	exchangeName := cfg.GetString("amqp.exchange.name")
