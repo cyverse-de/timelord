@@ -3,7 +3,9 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"fmt"
 	"log"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/cyverse-de/configurate"
@@ -32,6 +34,36 @@ var logger = logrus.WithFields(logrus.Fields{
 
 func init() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
+}
+
+type enforcer func(j *queries.RunningJob) error
+
+func jobStopperCallback(client *messaging.Client) enforcer {
+	return func(j *queries.RunningJob) error {
+		return client.SendStopRequest(
+			j.InvocationID,
+			"timelord",
+			"time limit exceeded",
+		)
+	}
+}
+
+func enforceLimit(j *queries.RunningJob, e enforcer) error {
+	limit, err := time.ParseDuration(fmt.Sprintf("%ds", j.TimeLimit))
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse duration for %d", j.TimeLimit)
+	}
+
+	sentOn := time.Unix(0, j.SentOn*1000000) // convert milliseconds to nanoseconds
+	n := time.Now()
+	limitDate := sentOn.Add(limit)
+	if n.After(limitDate) {
+		if err = e(j); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func main() {
@@ -91,7 +123,13 @@ func main() {
 	if err != nil {
 		logger.Fatal(errors.Wrapf(err, "failed to look up running jobs"))
 	}
+
+	cb := jobStopperCallback(client)
 	for _, j := range jobs {
 		logger.Infof("InvocationID: %s\tTimeLimit: %d\tSentOn: %d\n", j.InvocationID, j.TimeLimit, j.SentOn)
+		if err = enforceLimit(&j, cb); err != nil {
+			logger.Error(errors.Wrapf(err, "failed to enforce limit for %s", j.InvocationID))
+		}
+
 	}
 }
