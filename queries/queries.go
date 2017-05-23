@@ -30,7 +30,7 @@ FROM
   tools o
 WHERE
   j.status = 'Running'
-  AND j.app_id::uuid = a.id
+  AND j.app_id = a.id::text
   AND j.id = e.job_id
   AND s.app_id = a.id
   AND s.task_id = t.id
