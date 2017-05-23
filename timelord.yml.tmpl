@@ -1,0 +1,16 @@
+{{- with $base := (printf "configs/%s" (env "DE_ENV")) -}}
+{{- if tree (printf "%s/amqp" $base) -}}
+amqp:
+  {{ with $v := (key (printf "%s/amqp/uri" $base)) }}uri: {{ $v }}{{ end }}
+  {{- if tree (printf "%s/amqp/exchange" $base) }}
+  exchange:
+    {{ with $v := (key (printf "%s/amqp/exchange/name" $base)) }}name: {{ $v }}{{ end }}
+    {{ with $v := (key (printf "%s/amqp/exchange/type" $base)) }}type: {{ $v }}{{ end }}
+  {{- end }}
+{{- end }}
+
+{{- if tree (printf "%s/de-db" $base) }}
+db:
+  {{ with $v := (key (printf "%s/de-db/uri" $base)) }}uri: {{ $v }}{{ end }}
+{{- end }}
+{{- end -}}
