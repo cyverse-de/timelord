@@ -6,7 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"time"
+
+	_ "expvar"
 
 	"github.com/cyverse-de/configurate"
 	"github.com/cyverse-de/go-events/ping"
@@ -128,6 +132,7 @@ func main() {
 		err        error
 		cfg        *viper.Viper
 		configPath = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
+		expvarPort = flag.String("port", "60000", "The path to listen for expvar requests on.")
 	)
 
 	flag.Parse()
@@ -151,6 +156,17 @@ func main() {
 	if cfg, err = configurate.InitDefaults(*configPath, defaultConfig); err != nil {
 		log.Fatal(err)
 	}
+
+	// listen for expvar requests
+	go func() {
+		listenAddr := fmt.Sprintf(":%s", *expvarPort)
+		logger.Infof("listening for expvar requests on %s", listenAddr)
+		sock, err := net.Listen("tcp", listenAddr)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		http.Serve(sock, nil)
+	}()
 
 	// set up the amqp connection
 	amqpURI := cfg.GetString("amqp.uri")
