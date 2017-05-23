@@ -59,7 +59,7 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 		return errors.Wrapf(err, "failed to parse duration for %d", j.TimeLimit)
 	}
 
-	sentOn := time.Unix(0, j.SentOn*1000000) // convert milliseconds to nanoseconds
+	sentOn := time.Unix(0, j.StartOn*1000000) // convert milliseconds to nanoseconds
 	n := time.Now()
 	limitDate := sentOn.Add(limit)
 

@@ -44,7 +44,7 @@ type RunningJob struct {
 	InvocationID string
 	ToolID       string
 	TimeLimit    int
-	SentOn       int64
+	StartOn      int64
 }
 
 // LookupRunningJobs returns a []RunningJob populated with the jobs recorded
@@ -66,7 +66,7 @@ func LookupRunningJobs(db *sql.DB) ([]RunningJob, error) {
 			&j.InvocationID,
 			&j.ToolID,
 			&j.TimeLimit,
-			&j.SentOn,
+			&j.StartOn,
 		)
 		if err != nil {
 			return nil, err
