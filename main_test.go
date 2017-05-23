@@ -10,10 +10,7 @@ import (
 
 func TestEnforceLimits(t *testing.T) {
 	j := &queries.RunningJob{
-		JobID:        "job-id",
-		AppID:        "app-id",
 		InvocationID: "invocation-id",
-		ToolID:       "tool-id",
 		TimeLimit:    1,
 		StartOn:      time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC).UnixNano() / 1000000,
 	}
