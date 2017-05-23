@@ -49,6 +49,11 @@ func jobStopperCallback(client *messaging.Client) enforcer {
 }
 
 func enforceLimit(j *queries.RunningJob, e enforcer) error {
+	// don't enforce a time limit if it's set to 0.
+	if j.TimeLimit == 0 {
+		return nil
+	}
+
 	limit, err := time.ParseDuration(fmt.Sprintf("%ds", j.TimeLimit))
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse duration for %d", j.TimeLimit)
@@ -57,9 +62,37 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 	sentOn := time.Unix(0, j.SentOn*1000000) // convert milliseconds to nanoseconds
 	n := time.Now()
 	limitDate := sentOn.Add(limit)
+
 	if n.After(limitDate) {
+		logger.Info("current date %s is after time limit date %s", n, limitDate)
+
 		if err = e(j); err != nil {
-			return err
+			return errors.Wrap(err, "failed to enforce limit")
+		}
+	}
+
+	return nil
+}
+
+func action(db *sql.DB, client *messaging.Client, cb enforcer) error {
+	var err error
+
+	// try pinging the database to make sure the connection works
+	if err = db.Ping(); err != nil {
+		return errors.Wrapf(err, "error pinging database")
+	}
+
+	jobs, err := queries.LookupRunningJobs(db)
+	if err != nil {
+		return errors.Wrapf(err, "failed to look up running jobs")
+	}
+	logger.Infof("found %d running jobs", len(jobs))
+
+	for _, j := range jobs {
+		logger.Infof("checking time limits for %s", j.InvocationID)
+
+		if err = enforceLimit(&j, cb); err != nil {
+			logger.Error(errors.Wrapf(err, "failed to enforce limit for %s", j.InvocationID))
 		}
 	}
 
@@ -114,22 +147,15 @@ func main() {
 		logger.Fatal(errors.Wrapf(err, "error opening database"))
 	}
 
-	// try pinging the database to make sure the connection works
-	if err = db.Ping(); err != nil {
-		logger.Fatal(errors.Wrapf(err, "error pinging database"))
-	}
-
-	jobs, err := queries.LookupRunningJobs(db)
-	if err != nil {
-		logger.Fatal(errors.Wrapf(err, "failed to look up running jobs"))
-	}
-
 	cb := jobStopperCallback(client)
-	for _, j := range jobs {
-		logger.Infof("InvocationID: %s\tTimeLimit: %d\tSentOn: %d\n", j.InvocationID, j.TimeLimit, j.SentOn)
-		if err = enforceLimit(&j, cb); err != nil {
-			logger.Error(errors.Wrapf(err, "failed to enforce limit for %s", j.InvocationID))
+
+	for {
+		if err = action(db, client, cb); err != nil {
+			logger.Error(err)
 		}
 
+		// could use a time.Ticker here, but this way we don't have a channel getting
+		// backed up if the query takes a while or if AMQP gets backed up.
+		time.Sleep(time.Second * 15)
 	}
 }
