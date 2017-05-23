@@ -7,11 +7,11 @@ import (
 	"log"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/cyverse-de/configurate"
 	"github.com/cyverse-de/messaging"
 	"github.com/cyverse-de/timelord/queries"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	_ "github.com/lib/pq"
