@@ -8,6 +8,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/cyverse-de/configurate"
 	"github.com/cyverse-de/messaging"
+	"github.com/cyverse-de/timelord/queries"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 
@@ -84,5 +85,13 @@ func main() {
 	// try pinging the database to make sure the connection works
 	if err = db.Ping(); err != nil {
 		logger.Fatal(errors.Wrapf(err, "error pinging database"))
+	}
+
+	jobs, err := queries.LookupRunningJobs(db)
+	if err != nil {
+		logger.Fatal(errors.Wrapf(err, "failed to look up running jobs"))
+	}
+	for _, j := range jobs {
+		logger.Infof("InvocationID: %s\tTimeLimit: %d\tSentOn: %d\n", j.InvocationID, j.TimeLimit, j.SentOn)
 	}
 }
