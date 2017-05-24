@@ -8,6 +8,7 @@ const RunningJobsQuery = `
 SELECT
   e.external_id             invocation_id,
   r.username                username,
+  j.job_name                job_name,
   SUM(o.time_limit_seconds) time_limit_seconds,
   MIN(u.sent_on)            sent_on
 FROM
@@ -32,6 +33,7 @@ GROUP BY
 type RunningJob struct {
 	InvocationID string
 	Username     string
+	JobName      string
 	TimeLimit    int
 	StartOn      int64
 }
@@ -52,6 +54,7 @@ func LookupRunningJobs(db *sql.DB) ([]RunningJob, error) {
 		err = rows.Scan(
 			&j.InvocationID,
 			&j.Username,
+			&j.JobName,
 			&j.TimeLimit,
 			&j.StartOn,
 		)

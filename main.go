@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	_ "expvar"
@@ -15,6 +17,7 @@ import (
 	"github.com/cyverse-de/configurate"
 	"github.com/cyverse-de/go-events/ping"
 	"github.com/cyverse-de/messaging"
+	"github.com/cyverse-de/timelord/notifications"
 	"github.com/cyverse-de/timelord/queries"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -34,6 +37,8 @@ amqp:
   exchange:
     name: "de"
     type: "topic"
+notifications:
+  base: http://notifications:60000
 `
 
 var logger = logrus.WithFields(logrus.Fields{
@@ -78,6 +83,26 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 
 		if err = e(j); err != nil {
 			return errors.Wrap(err, "failed to enforce limit")
+		}
+	}
+
+	timeRemaining := n.Sub(limitDate)
+	if timeRemaining.Minutes() <= 6.0 {
+		notif := notifications.New(
+			j.Username,
+			fmt.Sprintf("Job %s has %s remaining until it will be shut down.", j.JobName, timeRemaining.String()),
+		)
+
+		if notif.URI != "" {
+			resp, err := notif.Send()
+			if err != nil {
+				return errors.Wrap(err, "failed to send notification")
+			}
+			b, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return errors.Wrap(err, "failed to read notification response body")
+			}
+			logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.InvocationID, resp.Status, b)
 		}
 	}
 
@@ -131,6 +156,7 @@ func main() {
 	var (
 		err        error
 		cfg        *viper.Viper
+		notifPath  = "/notifications"
 		configPath = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
 		expvarPort = flag.String("port", "60000", "The path to listen for expvar requests on.")
 	)
@@ -156,6 +182,15 @@ func main() {
 	if cfg, err = configurate.InitDefaults(*configPath, defaultConfig); err != nil {
 		log.Fatal(err)
 	}
+
+	// configure the notification emitters
+	notifBase := cfg.GetString("notifications.base")
+	notifURL, err := url.Parse(notifBase)
+	if err != nil {
+		logger.Error(errors.Wrapf(err, "failed to parse %s", notifBase))
+	}
+	notifURL.Path = notifPath
+	notifications.Init(notifURL.String())
 
 	// listen for expvar requests
 	go func() {
