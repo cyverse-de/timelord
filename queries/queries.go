@@ -7,10 +7,12 @@ import "database/sql"
 const RunningJobsQuery = `
 SELECT
   e.external_id             invocation_id,
+  r.username                username,
   SUM(o.time_limit_seconds) time_limit_seconds,
   MIN(u.sent_on)            sent_on
 FROM
   jobs j
+  JOIN users r              ON j.user_id = r.id
   JOIN job_steps e          ON j.id = e.job_id
   JOIN apps a               ON j.app_id = a.id::text
   JOIN app_steps s          ON a.id = s.app_id
@@ -29,6 +31,7 @@ GROUP BY
 // database.
 type RunningJob struct {
 	InvocationID string
+	Username     string
 	TimeLimit    int
 	StartOn      int64
 }
@@ -48,6 +51,7 @@ func LookupRunningJobs(db *sql.DB) ([]RunningJob, error) {
 		j := RunningJob{}
 		err = rows.Scan(
 			&j.InvocationID,
+			&j.Username,
 			&j.TimeLimit,
 			&j.StartOn,
 		)

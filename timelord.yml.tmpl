@@ -13,4 +13,9 @@ amqp:
 db:
   {{ with $v := (key (printf "%s/de-db/uri" $base)) }}uri: {{ $v }}{{ end }}
 {{- end }}
+
+{{- if tree (printf "%s/notifications" $base )}}
+notifications:
+  {{ with $v := (key (printf "%s/notifications/base" $base)) }}base: {{ $v }}{{ end }}
+{{- end }}
 {{- end -}}
