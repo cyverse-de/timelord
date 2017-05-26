@@ -8,7 +8,11 @@ const RunningJobsQuery = `
 SELECT
   e.external_id             invocation_id,
   r.username                username,
-  j.job_name                job_name,
+  j.job_name                analysis_name,
+  j.job_description         analysis_description,
+  j.status                  analysis_status,
+  j.start_date              analysis_start_date,
+  j.result_folder_path      analysis_result_folder_path,
   SUM(o.time_limit_seconds) time_limit_seconds,
   MIN(u.sent_on)            sent_on
 FROM
@@ -26,6 +30,7 @@ WHERE
 GROUP BY
   j.id,
   j.app_id,
+  r.username,
   e.external_id`
 
 // RunningJob represents a job that is in the 'Running' state in the DE
