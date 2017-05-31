@@ -36,11 +36,15 @@ GROUP BY
 // RunningJob represents a job that is in the 'Running' state in the DE
 // database.
 type RunningJob struct {
-	InvocationID string
-	Username     string
-	JobName      string
-	TimeLimit    int
-	StartOn      int64
+	InvocationID             string
+	Username                 string
+	AnalysisName             string
+	AnalysisDescription      string
+	AnalysisStatus           string
+	AnalysisStartDate        string
+	AnalysisResultFolderPath string
+	TimeLimit                int
+	StartOn                  int64
 }
 
 // LookupRunningJobs returns a []RunningJob populated with the jobs recorded
@@ -59,7 +63,11 @@ func LookupRunningJobs(db *sql.DB) ([]RunningJob, error) {
 		err = rows.Scan(
 			&j.InvocationID,
 			&j.Username,
-			&j.JobName,
+			&j.AnalysisName,
+			&j.AnalysisDescription,
+			&j.AnalysisStatus,
+			&j.AnalysisStartDate,
+			&j.AnalysisResultFolderPath,
 			&j.TimeLimit,
 			&j.StartOn,
 		)

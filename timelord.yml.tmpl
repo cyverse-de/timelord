@@ -18,4 +18,11 @@ db:
 notifications:
   {{ with $v := (key (printf "%s/notifications/base" $base)) }}base: {{ $v }}{{ end }}
 {{- end }}
+
+{{- if tree (printf "%s/groups" $base )}}
+groups:
+  {{ with $v := (key (printf "%s/groups/base" $base)) }}base: {{ $v }}{{ end }}
+{{- if tree (printf "%s/apps" $base )}}
+  {{ with $v := (key (printf "%s/apps/grouper-user" $base)) }}user: {{ $v }}{{ end }}
+{{- end -}}
 {{- end -}}

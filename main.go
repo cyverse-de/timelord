@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -15,20 +14,16 @@ import (
 	_ "expvar"
 
 	"github.com/cyverse-de/configurate"
-	"github.com/cyverse-de/go-events/ping"
 	"github.com/cyverse-de/messaging"
 	"github.com/cyverse-de/timelord/notifications"
 	"github.com/cyverse-de/timelord/queries"
+	"github.com/cyverse-de/timelord/users"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"github.com/streadway/amqp"
 
 	_ "github.com/lib/pq"
 )
-
-const pingKey = "events.timelord.ping"
-const pongKey = "events.timelord.pong"
 
 const defaultConfig = `db:
   uri: "db:5432"
@@ -39,6 +34,9 @@ amqp:
     type: "topic"
 notifications:
   base: http://notifications:60000
+groups:
+  base: http://iplant-groups:31310
+  user: grouper-user
 `
 
 var logger = logrus.WithFields(logrus.Fields{
@@ -87,44 +85,41 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 	}
 
 	timeRemaining := n.Sub(limitDate)
-	if timeRemaining.Minutes() <= 6.0 {
+	//if timeRemaining.Minutes() <= 6.0 && notifications.URI != "" && users.URI != "" {
+	if notifications.URI != "" && users.URI != "" {
+		user := users.New(users.ParseID(j.Username))
+		if err = user.Get(); err != nil {
+			return errors.Wrap(err, "failed to get user info")
+		}
+
+		p := notifications.NewPayload()
+		p.AnalysisName = j.AnalysisName
+		p.AnalysisDescription = j.AnalysisDescription
+		p.AnalysisStatus = j.AnalysisStatus
+		p.AnalysisStartDate = j.AnalysisStartDate
+		p.AnalysisResultsFolder = j.AnalysisResultFolderPath
+		p.Email = user.Email
+		p.User = j.Username
+
 		notif := notifications.New(
 			j.Username,
-			fmt.Sprintf("Job %s has %s remaining until it will be shut down.", j.JobName, timeRemaining.String()),
+			"Time Limit Warning",
+			fmt.Sprintf("Job %s has %s remaining until it will be shut down.", j.AnalysisName, timeRemaining.String()),
+			p,
 		)
 
-		if notif.URI != "" {
-			resp, err := notif.Send()
-			if err != nil {
-				return errors.Wrap(err, "failed to send notification")
-			}
-			b, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				return errors.Wrap(err, "failed to read notification response body")
-			}
-			logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.InvocationID, resp.Status, b)
+		resp, err := notif.Send()
+		if err != nil {
+			return errors.Wrap(err, "failed to send notification")
 		}
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return errors.Wrap(err, "failed to read notification response body")
+		}
+		logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.InvocationID, resp.Status, b)
 	}
 
 	return nil
-}
-
-// Ping handles incoming ping requests.
-func Ping(client *messaging.Client) func(delivery amqp.Delivery) {
-	return func(delivery amqp.Delivery) {
-		logger.Info("Received ping")
-
-		out, err := json.Marshal(&ping.Pong{})
-		if err != nil {
-			logger.Error(err)
-		}
-
-		logger.Info("Sent pong")
-
-		if err = client.Publish(pongKey, out); err != nil {
-			logger.Error(err)
-		}
-	}
 }
 
 func action(db *sql.DB, client *messaging.Client, cb enforcer) error {
@@ -192,6 +187,18 @@ func main() {
 	notifURL.Path = notifPath
 	notifications.Init(notifURL.String())
 
+	// configure the user lookups
+	groupsBase := cfg.GetString("groups.base")
+	groupsUser := cfg.GetString("groups.user")
+	groupsURL, err := url.Parse(groupsBase)
+	if err != nil {
+		logger.Error(errors.Wrapf(err, "failed to parse %s", groupsBase))
+	}
+	q := groupsURL.Query()
+	q.Set("user", groupsUser)
+	groupsURL.RawQuery = q.Encode()
+	users.Init(groupsURL.String())
+
 	// listen for expvar requests
 	go func() {
 		listenAddr := fmt.Sprintf(":%s", *expvarPort)
@@ -211,29 +218,11 @@ func main() {
 	}
 	defer client.Close()
 
-	go client.Listen()
-
-	exchange := cfg.GetString("amqp.exchange.name")
-	if exchange == "" {
-		logger.Error("amqp.exchange.name was empty")
-	}
-
-	exchangeType := cfg.GetString("amqp.exchange.type")
-	if exchangeType == "" {
-		logger.Error("amqp.exchange.type was empty")
-	}
-
-	client.AddConsumer(
-		exchange,
-		exchangeType,
-		"timelord",
-		pingKey,
-		Ping(client),
-	)
-
+	logger.Info("before setting up publishing")
 	// make sure we can publish over the configured amqp exchange
 	exchangeName := cfg.GetString("amqp.exchange.name")
 	client.SetupPublishing(exchangeName)
+	logger.Info("after setting up publishing")
 
 	// set up the database connection
 	dbURI := cfg.GetString("db.uri")
@@ -241,13 +230,16 @@ func main() {
 	if err != nil {
 		logger.Fatal(errors.Wrapf(err, "error opening database"))
 	}
-
+	logger.Info("before callback")
 	cb := jobStopperCallback(client)
+	logger.Info("after callback")
 
 	for {
+		logger.Info("before action")
 		if err = action(db, client, cb); err != nil {
 			logger.Error(err)
 		}
+		logger.Info("after action")
 
 		// could use a time.Ticker here, but this way we don't have a channel getting
 		// backed up if the query takes a while or if AMQP gets backed up.

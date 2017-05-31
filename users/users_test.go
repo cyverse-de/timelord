@@ -11,21 +11,21 @@ import (
 func TestInit(t *testing.T) {
 	expected := "test"
 	Init(expected)
-	actual := uri
+	actual := URI
 
 	if actual != expected {
-		t.Errorf("uri was %s, not %s", actual, expected)
+		t.Errorf("URI was %s, not %s", actual, expected)
 	}
 }
 
 func TestNew(t *testing.T) {
-	expectedURI := "test-uri"
+	expectedURI := "test-URI"
 	expectedID := "test-user"
 	Init(expectedURI)
 	u := New(expectedID)
 
 	if u.URI != expectedURI {
-		t.Errorf("uri was %s, not %s", u.URI, expectedURI)
+		t.Errorf("URI was %s, not %s", u.URI, expectedURI)
 	}
 
 	if u.ID != expectedID {
@@ -34,7 +34,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	expectedURI := "uri"
+	expectedURI := "URI"
 	Init(expectedURI)
 
 	expected := New("id")
@@ -92,5 +92,20 @@ func TestGet(t *testing.T) {
 
 	if actual.SourceID != expected.SourceID {
 		t.Errorf("source ID was %s, not %s", actual.SourceID, expected.SourceID)
+	}
+}
+
+func TestParseID(t *testing.T) {
+	tests := map[string]string{
+		"test-user":                 "test-user",
+		"test-user@example.com":     "test-user",
+		"test@user@example.com":     "test@user",
+		"test@user@one@example.com": "test@user@one",
+	}
+	for k, expected := range tests {
+		actual := ParseID(k)
+		if actual != expected {
+			t.Errorf("id was %s, not %s", actual, expected)
+		}
 	}
 }

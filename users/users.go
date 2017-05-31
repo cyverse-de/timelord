@@ -6,15 +6,17 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/pkg/errors"
 )
 
-var uri string
+// URI the default URI for user lookup requests
+var URI string
 
 // Init initializes the default URI used for requests to the iplant-groups service.
 func Init(u string) {
-	uri = u
+	URI = u
 }
 
 // User contains information about a user that was returned by various services
@@ -33,7 +35,7 @@ type User struct {
 // New returns a newly instantiated *User.
 func New(id string) *User {
 	return &User{
-		URI: uri,
+		URI: URI,
 		ID:  id,
 	}
 }
@@ -67,4 +69,15 @@ func (u *User) Get() error {
 	}
 
 	return nil
+}
+
+// ParseID returns a user's ID from their username. Right now it's basically
+// anything to the left of the last @ in their username.
+func ParseID(username string) string {
+	hasAt := strings.Contains(username, "@")
+	if !hasAt {
+		return username
+	}
+	parts := strings.Split(username, "@")
+	return strings.Join(parts[:len(parts)-1], "@")
 }
