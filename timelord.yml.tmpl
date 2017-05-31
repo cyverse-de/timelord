@@ -1,4 +1,5 @@
 {{- with $base := (printf "configs/%s" (env "DE_ENV")) -}}
+
 {{- if tree (printf "%s/amqp" $base) -}}
 amqp:
   {{ with $v := (key (printf "%s/amqp/uri" $base)) }}uri: {{ $v }}{{ end }}
@@ -25,4 +26,6 @@ groups:
 {{- if tree (printf "%s/apps" $base )}}
   {{ with $v := (key (printf "%s/apps/grouper-user" $base)) }}user: {{ $v }}{{ end }}
 {{- end -}}
+{{- end -}}
+
 {{- end -}}
