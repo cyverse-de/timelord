@@ -111,11 +111,11 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 
 	// don't enforce a time limit if it's set to 0.
 	if j.TimeLimit == 0 {
-		msg = fmt.Sprintf("Analysis '%s' has no time limit.", j.AnalysisName)
-		logger.Info(msg)
-		if err = sendNotif(j, msg, msg); err != nil {
-			return errors.Wrapf(err, "failed to notification about lack of a time limit for analysis '%s'", j.AnalysisName)
-		}
+		// msg = fmt.Sprintf("Analysis '%s' has no time limit.", j.AnalysisName)
+		// logger.Info(msg)
+		// if err = sendNotif(j, msg, msg); err != nil {
+		// 	return errors.Wrapf(err, "failed to notification about lack of a time limit for analysis '%s'", j.AnalysisName)
+		// }
 		return nil
 	}
 
