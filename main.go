@@ -61,9 +61,59 @@ func jobStopperCallback(client *messaging.Client) enforcer {
 	}
 }
 
+func sendNotif(j *queries.RunningJob, subject, msg string) error {
+	var err error
+
+	// Don't send notification if things aren't configured correctly. It's
+	// technically not an error, for now.
+	if notifications.URI == "" || users.URI == "" {
+		return nil
+	}
+
+	// We need to get the user's email address from the iplant-groups service.
+	user := users.New(users.ParseID(j.Username))
+	if err = user.Get(); err != nil {
+		return errors.Wrap(err, "failed to get user info")
+	}
+
+	p := notifications.NewPayload()
+	p.AnalysisName = j.AnalysisName
+	p.AnalysisDescription = j.AnalysisDescription
+	p.AnalysisStatus = j.AnalysisStatus
+	p.AnalysisStartDate = j.AnalysisStartDate
+	p.AnalysisResultsFolder = j.AnalysisResultFolderPath
+	p.Email = user.Email
+	p.User = j.Username
+
+	notif := notifications.New(j.Username, subject, msg, p)
+
+	resp, err := notif.Send()
+	if err != nil {
+		return errors.Wrap(err, "failed to send notification")
+	}
+
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return errors.Wrap(err, "failed to read notification response body")
+	}
+
+	logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.InvocationID, resp.Status, b)
+
+	return nil
+}
+
 func enforceLimit(j *queries.RunningJob, e enforcer) error {
+	var (
+		err error
+		msg string
+	)
+
 	// don't enforce a time limit if it's set to 0.
 	if j.TimeLimit == 0 {
+		msg = fmt.Sprintf("Analysis '%s' has no time limit.", j.AnalysisName)
+		if err = sendNotif(j, msg, msg); err != nil {
+			return errors.Wrapf(err, "failed to notification about lack of a time limit for analysis '%s'", j.AnalysisName)
+		}
 		return nil
 	}
 
@@ -85,38 +135,12 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 	}
 
 	timeRemaining := n.Sub(limitDate)
-	//if timeRemaining.Minutes() <= 6.0 && notifications.URI != "" && users.URI != "" {
-	if notifications.URI != "" && users.URI != "" {
-		user := users.New(users.ParseID(j.Username))
-		if err = user.Get(); err != nil {
-			return errors.Wrap(err, "failed to get user info")
-		}
 
-		p := notifications.NewPayload()
-		p.AnalysisName = j.AnalysisName
-		p.AnalysisDescription = j.AnalysisDescription
-		p.AnalysisStatus = j.AnalysisStatus
-		p.AnalysisStartDate = j.AnalysisStartDate
-		p.AnalysisResultsFolder = j.AnalysisResultFolderPath
-		p.Email = user.Email
-		p.User = j.Username
-
-		notif := notifications.New(
-			j.Username,
-			"Time Limit Warning",
-			fmt.Sprintf("Job %s has %s remaining until it will be shut down.", j.AnalysisName, timeRemaining.String()),
-			p,
-		)
-
-		resp, err := notif.Send()
-		if err != nil {
-			return errors.Wrap(err, "failed to send notification")
+	if timeRemaining.Minutes() <= 6.0 && notifications.URI != "" && users.URI != "" {
+		msg = fmt.Sprintf("Job %s has %s remaining until it will be shut down.", j.AnalysisName, timeRemaining.String())
+		if err = sendNotif(j, "Time Limit Warning", msg); err != nil {
+			return errors.Wrap(err, "failed to send time limit warning notification")
 		}
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return errors.Wrap(err, "failed to read notification response body")
-		}
-		logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.InvocationID, resp.Status, b)
 	}
 
 	return nil
