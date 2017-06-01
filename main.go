@@ -67,6 +67,7 @@ func sendNotif(j *queries.RunningJob, subject, msg string) error {
 	// Don't send notification if things aren't configured correctly. It's
 	// technically not an error, for now.
 	if notifications.URI == "" || users.URI == "" {
+		logger.Info("notification URI is %s and iplant-groups URI is %s", notifications.URI, users.URI)
 		return nil
 	}
 
@@ -111,6 +112,7 @@ func enforceLimit(j *queries.RunningJob, e enforcer) error {
 	// don't enforce a time limit if it's set to 0.
 	if j.TimeLimit == 0 {
 		msg = fmt.Sprintf("Analysis '%s' has no time limit.", j.AnalysisName)
+		logger.Info(msg)
 		if err = sendNotif(j, msg, msg); err != nil {
 			return errors.Wrapf(err, "failed to notification about lack of a time limit for analysis '%s'", j.AnalysisName)
 		}
@@ -175,7 +177,7 @@ func main() {
 	var (
 		err        error
 		cfg        *viper.Viper
-		notifPath  = "/notifications"
+		notifPath  = "/notification"
 		configPath = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
 		expvarPort = flag.String("port", "60000", "The path to listen for expvar requests on.")
 	)
