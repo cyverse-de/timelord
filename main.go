@@ -77,6 +77,8 @@ func sendNotif(j *queries.RunningJob, subject, msg string) error {
 		return errors.Wrap(err, "failed to get user info")
 	}
 
+	u := users.ParseID(j.Username)
+
 	p := notifications.NewPayload()
 	p.AnalysisName = j.AnalysisName
 	p.AnalysisDescription = j.AnalysisDescription
@@ -84,9 +86,9 @@ func sendNotif(j *queries.RunningJob, subject, msg string) error {
 	p.AnalysisStartDate = j.AnalysisStartDate
 	p.AnalysisResultsFolder = j.AnalysisResultFolderPath
 	p.Email = user.Email
-	p.User = j.Username
+	p.User = u
 
-	notif := notifications.New(j.Username, subject, msg, p)
+	notif := notifications.New(u, subject, msg, p)
 
 	resp, err := notif.Send()
 	if err != nil {
