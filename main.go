@@ -14,13 +14,13 @@ import (
 	_ "expvar"
 
 	"github.com/cyverse-de/configurate"
-	"github.com/cyverse-de/messaging"
 	"github.com/cyverse-de/timelord/notifications"
 	"github.com/cyverse-de/timelord/queries"
 	"github.com/cyverse-de/timelord/users"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"gopkg.in/cyverse-de/messaging.v2"
 
 	_ "github.com/lib/pq"
 )
