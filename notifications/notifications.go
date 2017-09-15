@@ -52,7 +52,7 @@ func NewPayload() *Payload {
 func New(user, subject, msg string, payload *Payload) *Notification {
 	return &Notification{
 		URI:           URI,
-		Type:          "Analysis",
+		Type:          "analysis",
 		User:          user,
 		Subject:       subject,
 		Message:       msg,
