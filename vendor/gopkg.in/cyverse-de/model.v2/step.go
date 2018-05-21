@@ -10,13 +10,14 @@ import (
 
 // StepComponent is where the settings for a tool in a job step are located.
 type StepComponent struct {
-	Container   Container `json:"container"`
-	Type        string    `json:"type"`
-	Name        string    `json:"name"`
-	Location    string    `json:"location"`
-	Description string    `json:"description"`
-	TimeLimit   int       `json:"time_limit_seconds"`
-	Restricted  bool      `json:"restricted"`
+	Container     Container `json:"container"`
+	Type          string    `json:"type"`
+	Name          string    `json:"name"`
+	Location      string    `json:"location"`
+	Description   string    `json:"description"`
+	TimeLimit     int       `json:"time_limit_seconds"`
+	Restricted    bool      `json:"restricted"`
+	IsInteractive bool      `json:"interactive"`
 }
 
 // StepEnvironment defines the environment variables that should be set for a
