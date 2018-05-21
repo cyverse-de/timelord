@@ -34,8 +34,8 @@ amqp:
     type: "topic"
 notifications:
   base: http://notifications:60000
-groups:
-  base: http://iplant-groups:31310
+iplant_groups:
+  base: http://iplant-groups
   user: grouper-user
 `
 
@@ -196,8 +196,8 @@ func main() {
 	notifications.Init(notifURL.String())
 
 	// configure the user lookups
-	groupsBase := cfg.GetString("groups.base")
-	groupsUser := cfg.GetString("groups.user")
+	groupsBase := cfg.GetString("iplant_groups.base")
+	groupsUser := cfg.GetString("iplant_groups.user")
 	groupsURL, err := url.Parse(groupsBase)
 	if err != nil {
 		logger.Error(errors.Wrapf(err, "failed to parse %s", groupsBase))
