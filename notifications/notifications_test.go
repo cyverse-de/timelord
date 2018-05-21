@@ -55,7 +55,7 @@ func TestSend(t *testing.T) {
 		if n1.Subject != expectedSubject {
 			t.Errorf("subject was %s, not %s", n1.Subject, expectedSubject)
 		}
-		if n1.Type != "Analysis" {
+		if n1.Type != "analysis" {
 			t.Errorf("type was %s, not 'Analysis'", n1.Type)
 		}
 	}))
