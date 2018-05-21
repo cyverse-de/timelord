@@ -181,21 +181,6 @@ func main() {
 
 	flag.Parse()
 
-	// set up the info level logger for the messaging package
-	infolog := logger.WriterLevel(logrus.InfoLevel)
-	defer infolog.Close()
-	messaging.Info = log.New(infolog, "", log.Lshortfile)
-
-	// set up the error level logger for the messaging package
-	errorlog := logger.WriterLevel(logrus.ErrorLevel)
-	defer errorlog.Close()
-	messaging.Error = log.New(errorlog, "", log.Lshortfile)
-
-	// set up the warn level logger for the messaging package
-	warnlog := logger.WriterLevel(logrus.WarnLevel)
-	defer warnlog.Close()
-	messaging.Warn = log.New(warnlog, "", log.Lshortfile)
-
 	// make sure the configuration object has sane defaults.
 	if cfg, err = configurate.InitDefaults(*configPath, defaultConfig); err != nil {
 		log.Fatal(err)
