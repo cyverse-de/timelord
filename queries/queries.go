@@ -25,13 +25,15 @@ FROM
   JOIN tools o              ON t.tool_id = o.id
   JOIN job_status_updates u ON u.external_id = e.external_id
 WHERE
-  j.status = 'Running'
-  AND u.status = 'Running'
+  j.status ILIKE 'Running'
+  AND u.status ILIKE 'Running'
 GROUP BY
   j.id,
   j.app_id,
   r.username,
-  e.external_id`
+  e.external_id
+HAVING
+  BOOL_OR(o.interactive) = TRUE`
 
 // RunningJob represents a job that is in the 'Running' state in the DE
 // database.
