@@ -1,4 +1,4 @@
-package users
+package main
 
 import (
 	"encoding/json"
@@ -11,12 +11,12 @@ import (
 	"github.com/pkg/errors"
 )
 
-// URI the default URI for user lookup requests
-var URI string
+// UsersURI the default URI for user lookup requests
+var UsersURI string
 
-// Init initializes the default URI used for requests to the iplant-groups service.
-func Init(u string) {
-	URI = u
+// UsersInit initializes the default URI used for requests to the iplant-groups service.
+func UsersInit(u string) {
+	UsersURI = u
 }
 
 // User contains information about a user that was returned by various services
@@ -32,10 +32,10 @@ type User struct {
 	SourceID    string `json:"source_id"`
 }
 
-// New returns a newly instantiated *User.
-func New(id string) *User {
+// NewUser returns a newly instantiated *User.
+func NewUser(id string) *User {
 	return &User{
-		URI: URI,
+		URI: UsersURI,
 		ID:  id,
 	}
 }

@@ -8,20 +8,16 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/cyverse-de/timelord/notifications"
-	"github.com/cyverse-de/timelord/queries"
-	"github.com/cyverse-de/timelord/users"
 )
 
 func TestEnforceLimits(t *testing.T) {
-	j := &queries.RunningJob{
+	j := &RunningJob{
 		InvocationID: "invocation-id",
 		TimeLimit:    1,
 		StartOn:      time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC).UnixNano() / 1000000,
 	}
 	toggle := false
-	testcb := func(j *queries.RunningJob) error {
+	testcb := func(j *RunningJob) error {
 		toggle = true
 		return nil
 	}
@@ -58,7 +54,7 @@ func TestEnforceLimits(t *testing.T) {
 	j.TimeLimit = 1
 	j.StartOn = time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC).UnixNano() / 1000000
 	toggle = false
-	testcb2 := func(j *queries.RunningJob) error {
+	testcb2 := func(j *RunningJob) error {
 		toggle = true
 		return errors.New("test")
 	}
@@ -71,10 +67,10 @@ func TestSendNotif(t *testing.T) {
 	notifts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("OK")
 	}))
-	notifications.URI = notifts.URL
+	NotifsURI = notifts.URL
 
 	usersts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		expected := users.New("id")
+		expected := NewUser("id")
 		expected.Name = "first-name last-name"
 		expected.FirstName = "first-name"
 		expected.LastName = "last-name"
@@ -88,9 +84,9 @@ func TestSendNotif(t *testing.T) {
 		}
 		w.Write(msg)
 	}))
-	users.URI = usersts.URL
+	UsersURI = usersts.URL
 
-	j := &queries.RunningJob{
+	j := &RunningJob{
 		InvocationID: "invocation-id",
 		TimeLimit:    1,
 		StartOn:      time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC).UnixNano() / 1000000,

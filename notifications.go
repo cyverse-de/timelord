@@ -1,4 +1,4 @@
-package notifications
+package main
 
 import (
 	"bytes"
@@ -8,12 +8,12 @@ import (
 	"github.com/pkg/errors"
 )
 
-// URI the default URI for notification requests.
-var URI string
+// NotifsURI the default URI for notification requests.
+var NotifsURI string
 
-// Init sets the default URI to send notifications to.
-func Init(newuri string) {
-	URI = newuri
+// NotifsInit sets the default URI to send notifications to.
+func NotifsInit(newuri string) {
+	NotifsURI = newuri
 }
 
 // Notification is a message intended as a notification to some upstream service
@@ -48,10 +48,10 @@ func NewPayload() *Payload {
 	}
 }
 
-// New returns a newly initialized *Notification.
-func New(user, subject, msg string, payload *Payload) *Notification {
+// NewNotification returns a newly initialized *Notification.
+func NewNotification(user, subject, msg string, payload *Payload) *Notification {
 	return &Notification{
-		URI:           URI,
+		URI:           NotifsURI,
 		Type:          "analysis",
 		User:          user,
 		Subject:       subject,

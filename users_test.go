@@ -1,4 +1,4 @@
-package users
+package main
 
 import (
 	"encoding/json"
@@ -8,21 +8,21 @@ import (
 	"testing"
 )
 
-func TestInit(t *testing.T) {
+func TestUsersInit(t *testing.T) {
 	expected := "test"
-	Init(expected)
-	actual := URI
+	UsersInit(expected)
+	actual := UsersURI
 
 	if actual != expected {
 		t.Errorf("URI was %s, not %s", actual, expected)
 	}
 }
 
-func TestNew(t *testing.T) {
+func TestNewUser(t *testing.T) {
 	expectedURI := "test-URI"
 	expectedID := "test-user"
-	Init(expectedURI)
-	u := New(expectedID)
+	UsersInit(expectedURI)
+	u := NewUser(expectedID)
 
 	if u.URI != expectedURI {
 		t.Errorf("URI was %s, not %s", u.URI, expectedURI)
@@ -35,9 +35,9 @@ func TestNew(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	expectedURI := "URI"
-	Init(expectedURI)
+	UsersInit(expectedURI)
 
-	expected := New("id")
+	expected := NewUser("id")
 	expected.Name = "first-name last-name"
 	expected.FirstName = "first-name"
 	expected.LastName = "last-name"
@@ -59,7 +59,7 @@ func TestGet(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	actual := New("id")
+	actual := NewUser("id")
 	actual.URI = srv.URL
 	err := actual.Get()
 	if err != nil {

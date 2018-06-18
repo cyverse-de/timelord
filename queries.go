@@ -1,4 +1,4 @@
-package queries
+package main
 
 import "database/sql"
 
