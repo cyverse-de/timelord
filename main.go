@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	_ "expvar"
 
@@ -87,17 +88,6 @@ func sendNotif(j *RunningJob, subject, msg string) error {
 	return nil
 }
 
-///// Setting the planned_end_date
-// Wait for the "Running" job status updates.
-// Map the invocation ID to an analysis ID with the /admin/analyses/by-external-id/{external-id} endpoint.
-// Get the app ID from the /analyses/{analysis-id}/parameters endpoint.
-// Get the list of tools used in the analysis from the /apps/{system-id}/{app-id}/tools endpoint.
-// If the tool is interactive, add up all of the time limits. If a tool has a time limit of 0, then add in the default of 8 hours.
-// Use the PATCH /analyses/{analysis-id} to set the planned_end_date for the analysis.
-
-///// Enforcing the planned_end_date
-//
-
 // ConfigureNotifications sets up the notification emitters.
 func ConfigureNotifications(cfg *viper.Viper, notifPath string) error {
 	notifBase := cfg.GetString("notifications.base")
@@ -127,11 +117,13 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 
 func main() {
 	var (
-		err        error
-		cfg        *viper.Viper
-		notifPath  = "/notification"
-		configPath = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
-		expvarPort = flag.String("port", "60000", "The path to listen for expvar requests on.")
+		err          error
+		cfg          *viper.Viper
+		notifPath    = "/notification"
+		configPath   = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
+		expvarPort   = flag.String("port", "60000", "The path to listen for expvar requests on.")
+		appsBase     = flag.String("apps", "http://apps", "The base URL for the apps service.")
+		analysesBase = flag.String("analyses", "http://analyses", "The base URL for analyses service.")
 	)
 
 	flag.Parse()
@@ -150,6 +142,26 @@ func main() {
 	if err = ConfigureUserLookups(cfg); err != nil {
 		log.Fatal(err)
 	}
+
+	go func() {
+		var jl *JobList
+
+		for {
+			jl, err = JobsToKill(*analysesBase)
+			if err != nil {
+				logger.Error(err)
+				continue
+			}
+
+			for _, j := range jl.Jobs {
+				if err = KillJob(*appsBase, j.ID, j.Username); err != nil {
+					logger.Error(err)
+				}
+			}
+
+			time.Sleep(time.Second * 10)
+		}
+	}()
 
 	listenAddr := fmt.Sprintf(":%s", *expvarPort)
 	logger.Infof("listening for expvar requests on %s", listenAddr)
