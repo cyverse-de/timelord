@@ -15,6 +15,10 @@ type Job struct {
 	UserID         string `json:"user_id"`
 	Username       string `json:"username"`
 	Status         string `json:"status"`
+	Description    string `json:"description"`
+	Name           string `json:"name"`
+	ResultFolder   string `json:"result_folder"`
+	StartDate      int64  `json:"start_date"`
 	PlannedEndDate int64  `json:"planned_end_date"`
 }
 
