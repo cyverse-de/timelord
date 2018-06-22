@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -9,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"time"
 
 	_ "expvar"
 
@@ -17,7 +15,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"gopkg.in/cyverse-de/messaging.v4"
 
 	_ "github.com/lib/pq"
 )
@@ -44,18 +41,6 @@ var logger = logrus.WithFields(logrus.Fields{
 
 func init() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
-}
-
-type enforcer func(j *RunningJob) error
-
-func jobStopperCallback(client *messaging.Client) enforcer {
-	return func(j *RunningJob) error {
-		return client.SendStopRequest(
-			j.InvocationID,
-			"timelord",
-			"time limit exceeded",
-		)
-	}
 }
 
 func sendNotif(j *RunningJob, subject, msg string) error {
@@ -102,70 +87,16 @@ func sendNotif(j *RunningJob, subject, msg string) error {
 	return nil
 }
 
-func enforceLimit(j *RunningJob, e enforcer) error {
-	var (
-		err error
-		msg string
-	)
+///// Setting the planned_end_date
+// Wait for the "Running" job status updates.
+// Map the invocation ID to an analysis ID with the /admin/analyses/by-external-id/{external-id} endpoint.
+// Get the app ID from the /analyses/{analysis-id}/parameters endpoint.
+// Get the list of tools used in the analysis from the /apps/{system-id}/{app-id}/tools endpoint.
+// If the tool is interactive, add up all of the time limits. If a tool has a time limit of 0, then add in the default of 8 hours.
+// Use the PATCH /analyses/{analysis-id} to set the planned_end_date for the analysis.
 
-	// don't enforce a time limit if it's set to 0.
-	if j.TimeLimit == 0 {
-		return nil
-	}
-
-	limit, err := time.ParseDuration(fmt.Sprintf("%ds", j.TimeLimit))
-	if err != nil {
-		return errors.Wrapf(err, "failed to parse duration for %d", j.TimeLimit)
-	}
-
-	sentOn := time.Unix(0, j.StartOn*1000000) // convert milliseconds to nanoseconds
-	n := time.Now()
-	limitDate := sentOn.Add(limit)
-
-	if n.After(limitDate) {
-		logger.Info("current date %s is after time limit date %s", n, limitDate)
-
-		if err = e(j); err != nil {
-			return errors.Wrap(err, "failed to enforce limit")
-		}
-	}
-
-	timeRemaining := n.Sub(limitDate)
-
-	if timeRemaining.Minutes() <= 6.0 && NotifsURI != "" && UsersURI != "" {
-		msg = fmt.Sprintf("Job %s has %s remaining until it will be shut down.", j.AnalysisName, timeRemaining.String())
-		if err = sendNotif(j, "Time Limit Warning", msg); err != nil {
-			return errors.Wrap(err, "failed to send time limit warning notification")
-		}
-	}
-
-	return nil
-}
-
-func action(db *sql.DB, client *messaging.Client, cb enforcer) error {
-	var err error
-
-	// try pinging the database to make sure the connection works
-	if err = db.Ping(); err != nil {
-		return errors.Wrapf(err, "error pinging database")
-	}
-
-	jobs, err := LookupRunningJobs(db)
-	if err != nil {
-		return errors.Wrapf(err, "failed to look up running jobs")
-	}
-	logger.Infof("found %d running jobs", len(jobs))
-
-	for _, j := range jobs {
-		logger.Infof("checking time limits for %s", j.InvocationID)
-
-		if err = enforceLimit(&j, cb); err != nil {
-			logger.Error(errors.Wrapf(err, "failed to enforce limit for %s", j.InvocationID))
-		}
-	}
-
-	return nil
-}
+///// Enforcing the planned_end_date
+//
 
 func main() {
 	var (
@@ -204,50 +135,11 @@ func main() {
 	groupsURL.RawQuery = q.Encode()
 	UsersInit(groupsURL.String())
 
-	// listen for expvar requests
-	go func() {
-		listenAddr := fmt.Sprintf(":%s", *expvarPort)
-		logger.Infof("listening for expvar requests on %s", listenAddr)
-		sock, err := net.Listen("tcp", listenAddr)
-		if err != nil {
-			logger.Fatal(err)
-		}
-		http.Serve(sock, nil)
-	}()
-
-	// set up the amqp connection
-	amqpURI := cfg.GetString("amqp.uri")
-	client, err := messaging.NewClient(amqpURI, true)
+	listenAddr := fmt.Sprintf(":%s", *expvarPort)
+	logger.Infof("listening for expvar requests on %s", listenAddr)
+	sock, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
-	defer client.Close()
-
-	logger.Info("before setting up publishing")
-	// make sure we can publish over the configured amqp exchange
-	exchangeName := cfg.GetString("amqp.exchange.name")
-	client.SetupPublishing(exchangeName)
-	logger.Info("after setting up publishing")
-
-	// set up the database connection
-	dbURI := cfg.GetString("db.uri")
-	db, err := sql.Open("postgres", dbURI)
-	if err != nil {
-		logger.Fatal(errors.Wrapf(err, "error opening database"))
-	}
-	logger.Info("before callback")
-	cb := jobStopperCallback(client)
-	logger.Info("after callback")
-
-	for {
-		logger.Info("before action")
-		if err = action(db, client, cb); err != nil {
-			logger.Error(err)
-		}
-		logger.Info("after action")
-
-		// could use a time.Ticker here, but this way we don't have a channel getting
-		// backed up if the query takes a while or if AMQP gets backed up.
-		time.Sleep(time.Second * 15)
-	}
+	http.Serve(sock, nil)
 }
