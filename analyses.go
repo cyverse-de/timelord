@@ -13,6 +13,7 @@ type Job struct {
 	ID             string `json:"id"`
 	AppID          string `json:"app_id"`
 	UserID         string `json:"user_id"`
+	Username       string `json:"username"`
 	Status         string `json:"status"`
 	PlannedEndDate int64  `json:"planned_end_date"`
 }
