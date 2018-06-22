@@ -98,6 +98,33 @@ func sendNotif(j *RunningJob, subject, msg string) error {
 ///// Enforcing the planned_end_date
 //
 
+// ConfigureNotifications sets up the notification emitters.
+func ConfigureNotifications(cfg *viper.Viper, notifPath string) error {
+	notifBase := cfg.GetString("notifications.base")
+	notifURL, err := url.Parse(notifBase)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse %s", notifBase)
+	}
+	notifURL.Path = notifPath
+	NotifsInit(notifURL.String())
+	return nil
+}
+
+// ConfigureUserLookups sets up the api for getting user information.
+func ConfigureUserLookups(cfg *viper.Viper) error {
+	groupsBase := cfg.GetString("iplant_groups.base")
+	groupsUser := cfg.GetString("iplant_groups.user")
+	groupsURL, err := url.Parse(groupsBase)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse %s", groupsBase)
+	}
+	q := groupsURL.Query()
+	q.Set("user", groupsUser)
+	groupsURL.RawQuery = q.Encode()
+	UsersInit(groupsURL.String())
+	return nil
+}
+
 func main() {
 	var (
 		err        error
@@ -115,25 +142,14 @@ func main() {
 	}
 
 	// configure the notification emitters
-	notifBase := cfg.GetString("notifications.base")
-	notifURL, err := url.Parse(notifBase)
-	if err != nil {
-		logger.Error(errors.Wrapf(err, "failed to parse %s", notifBase))
+	if err = ConfigureNotifications(cfg, notifPath); err != nil {
+		log.Fatal(err)
 	}
-	notifURL.Path = notifPath
-	NotifsInit(notifURL.String())
 
 	// configure the user lookups
-	groupsBase := cfg.GetString("iplant_groups.base")
-	groupsUser := cfg.GetString("iplant_groups.user")
-	groupsURL, err := url.Parse(groupsBase)
-	if err != nil {
-		logger.Error(errors.Wrapf(err, "failed to parse %s", groupsBase))
+	if err = ConfigureUserLookups(cfg); err != nil {
+		log.Fatal(err)
 	}
-	q := groupsURL.Query()
-	q.Set("user", groupsUser)
-	groupsURL.RawQuery = q.Encode()
-	UsersInit(groupsURL.String())
 
 	listenAddr := fmt.Sprintf(":%s", *expvarPort)
 	logger.Infof("listening for expvar requests on %s", listenAddr)
