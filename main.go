@@ -23,11 +23,6 @@ import (
 
 const defaultConfig = `db:
   uri: "db:5432"
-amqp:
-  uri: "amqp://amqp:60000/de/de"
-  exchange:
-    name: "de"
-    type: "topic"
 notifications:
   base: http://notifications:60000
 iplant_groups:
@@ -158,7 +153,7 @@ func main() {
 		err             error
 		cfg             *viper.Viper
 		notifPath       = "/notification"
-		configPath      = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
+		configPath      = flag.String("config", "/etc/iplant/de/jobservices.yml", "The path to the YAML config file.")
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
 		analysesBase    = flag.String("analyses", "http://analyses", "The base URL for analyses service.")
