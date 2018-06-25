@@ -14,6 +14,7 @@ import (
 	_ "expvar"
 
 	"github.com/cyverse-de/configurate"
+	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -158,6 +159,7 @@ func main() {
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
 		analysesBase    = flag.String("analyses", "http://analyses", "The base URL for analyses service.")
 		warningInterval = flag.Int64("warning-interval", 10, "The number of minutes in advance to warn users about job kills.")
+		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the Redis set containing job IDs as members. Used to track warning notifications.")
 	)
 
 	flag.Parse()
@@ -177,13 +179,27 @@ func main() {
 		log.Fatal(err)
 	}
 
+	redishost := cfg.GetString("redis.host")
+	redisdb := cfg.GetInt("redis.db.number")
+
+	client := redis.NewClient(
+		&redis.Options{
+			Addr:     redishost,
+			Password: "",
+			DB:       redisdb,
+		},
+	)
+
+	_, err = client.Ping().Result()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	go func() {
 		var (
 			jl, warnings *JobList
-			jobtracker   map[string]bool
+			sent         bool
 		)
-
-		jobtracker = map[string]bool{}
 
 		for {
 			warnings, err = JobKillWarnings(*analysesBase, *warningInterval)
@@ -191,11 +207,19 @@ func main() {
 				logger.Error(err)
 			} else {
 				for _, w := range warnings.Jobs {
-					if _, ok := jobtracker[w.ID]; !ok {
+					sent, err = client.SIsMember(*warningSentKey, w.ID).Result()
+					if err != nil {
+						logger.Error(err)
+						continue
+					}
+
+					if !sent {
 						if err = SendWarningNotification(&w); err != nil {
 							logger.Error(err)
 						} else {
-							jobtracker[w.ID] = true
+							if err = client.SAdd(*warningSentKey, w.ID).Err(); err != nil {
+								logger.Error(err)
+							}
 						}
 					}
 				}
@@ -214,7 +238,9 @@ func main() {
 					if err = SendKillNotification(&j); err != nil {
 						logger.Error(err)
 					}
-					delete(jobtracker, j.ID)
+					if _, err = client.SRem(*warningSentKey, j.ID).Result(); err != nil {
+						logger.Error(err)
+					}
 				}
 			}
 
