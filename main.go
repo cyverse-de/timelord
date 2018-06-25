@@ -116,15 +116,53 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 	return nil
 }
 
+// SendKillNotification sends a notification to the user telling them that
+// their job has been killed.
+func SendKillNotification(j *Job) error {
+	subject := fmt.Sprintf(KillSubjectFormat, j.ID)
+	endtime := time.Unix(0, j.PlannedEndDate*1000000)
+	msg := fmt.Sprintf(
+		KillMessageFormat,
+		j.Name,
+		j.ID,
+		endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+		endtime.UTC().Format(time.UnixDate),
+		j.ResultFolder,
+	)
+
+	return sendNotif(j, subject, msg)
+}
+
+// SendWarningNotification sends a notification to the user telling them that
+// their job will be killed in the near future.
+func SendWarningNotification(j *Job) error {
+	endtime := time.Unix(0, j.PlannedEndDate*1000000)
+	endtimeMST := endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006")
+	endtimeUTC := endtime.UTC().Format(time.UnixDate)
+	subject := fmt.Sprintf(WarningSubjectFormat, j.ID, endtimeMST, endtimeUTC)
+
+	msg := fmt.Sprintf(
+		WarningMessageFormat,
+		j.Name,
+		j.ID,
+		endtimeMST,
+		endtimeUTC,
+		j.ResultFolder,
+	)
+
+	return sendNotif(j, subject, msg)
+}
+
 func main() {
 	var (
-		err          error
-		cfg          *viper.Viper
-		notifPath    = "/notification"
-		configPath   = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
-		expvarPort   = flag.String("port", "60000", "The path to listen for expvar requests on.")
-		appsBase     = flag.String("apps", "http://apps", "The base URL for the apps service.")
-		analysesBase = flag.String("analyses", "http://analyses", "The base URL for analyses service.")
+		err             error
+		cfg             *viper.Viper
+		notifPath       = "/notification"
+		configPath      = flag.String("config", "/etc/iplant/de/timelord.yml", "The path to the YAML config file.")
+		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
+		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
+		analysesBase    = flag.String("analyses", "http://analyses", "The base URL for analyses service.")
+		warningInterval = flag.Int64("warning-interval", 10, "The number of minutes in advance to warn users about job kills.")
 	)
 
 	flag.Parse()
@@ -145,9 +183,29 @@ func main() {
 	}
 
 	go func() {
-		var jl *JobList
+		var (
+			jl, warnings *JobList
+			jobtracker   map[string]bool
+		)
+
+		jobtracker = map[string]bool{}
 
 		for {
+			warnings, err = JobKillWarnings(*analysesBase, *warningInterval)
+			if err != nil {
+				logger.Error(err)
+			} else {
+				for _, w := range warnings.Jobs {
+					if _, ok := jobtracker[w.ID]; !ok {
+						if err = SendWarningNotification(&w); err != nil {
+							logger.Error(err)
+						} else {
+							jobtracker[w.ID] = true
+						}
+					}
+				}
+			}
+
 			jl, err = JobsToKill(*analysesBase)
 			if err != nil {
 				logger.Error(err)
@@ -155,22 +213,13 @@ func main() {
 			}
 
 			for _, j := range jl.Jobs {
-				subject := fmt.Sprintf(SubjectFormat, j.ID)
-				endtime := time.Unix(0, j.PlannedEndDate*1000000)
-				msg := fmt.Sprintf(
-					MessageFormat,
-					j.Name,
-					j.ID,
-					endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
-					endtime.UTC().Format(time.UnixDate),
-					j.ResultFolder,
-				)
-				if err = sendNotif(&j, subject, msg); err != nil {
-					logger.Error(err)
-				}
-
 				if err = KillJob(*appsBase, j.ID, j.Username); err != nil {
 					logger.Error(err)
+				} else {
+					if err = SendKillNotification(&j); err != nil {
+						logger.Error(err)
+					}
+					delete(jobtracker, j.ID)
 				}
 			}
 

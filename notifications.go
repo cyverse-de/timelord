@@ -16,15 +16,25 @@ func NotifsInit(newuri string) {
 	NotifsURI = newuri
 }
 
-// MessageFormat contains the parameterized message that gets sent to users when
+// KillMessageFormat contains the parameterized message that gets sent to users when
 // their job expires.
-const MessageFormat = `Analysis "%s" (%s) had a configured end date of "%s" (%s), which has passed.
+const KillMessageFormat = `Analysis "%s" (%s) had a configured end date of "%s" (%s), which has passed.
 
 Output files should be available in the %s folder in iRODS.`
 
-// SubjectFormat is the parameterized email subject that is used for the email
+// KillSubjectFormat is the parameterized email subject that is used for the email
 // that is sent to users when their job expires.
-const SubjectFormat = "Analysis %s canceled due to time limit restrictions."
+const KillSubjectFormat = "Analysis %s canceled due to time limit restrictions."
+
+// WarningMessageFormat is the parameterized message that gets send to users
+// when their job is going to expire in the near future.
+const WarningMessageFormat = `Analysis "%s" (%s) is set to expire on "%s" (%s).
+
+Please finish any work that is in progress. Output files will be transferred to the %s folder in iRODS when the application shuts down.`
+
+// WarningSubjectFormat is the parameterized subject for the email that is sent
+// to users when their job is going to terminate in the near future.
+const WarningSubjectFormat = "Analysis %s will terminate on %s (%s)."
 
 // Notification is a message intended as a notification to some upstream service
 // or the DE UI.

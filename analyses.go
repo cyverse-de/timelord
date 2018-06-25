@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -36,6 +37,33 @@ func JobsToKill(api string) (*JobList, error) {
 		return nil, err
 	}
 	apiURL.Path = filepath.Join(apiURL.Path, "/expired/running")
+
+	resp, err := http.Get(apiURL.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	joblist := &JobList{
+		Jobs: []Job{},
+	}
+
+	if err = json.NewDecoder(resp.Body).Decode(joblist); err != nil {
+		return nil, err
+	}
+
+	return joblist, nil
+}
+
+// JobKillWarnings returns a list of running jobs that are set to be killed
+// within the next 10 minutes. 'api' should be the base URL for the analyses
+// service.
+func JobKillWarnings(api string, minutes int64) (*JobList, error) {
+	apiURL, err := url.Parse(api)
+	if err != nil {
+		return nil, err
+	}
+	apiURL.Path = filepath.Join(apiURL.Path, fmt.Sprintf("/expires-in/%d/running", minutes))
 
 	resp, err := http.Get(apiURL.String())
 	if err != nil {
