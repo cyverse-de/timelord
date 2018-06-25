@@ -7,15 +7,24 @@
   revision = "7cb335597f9b972d380a6787a95b34f4a4705d5d"
 
 [[projects]]
-  name = "github.com/cyverse-de/model"
-  packages = ["submitfile"]
-  revision = "bf8453314372d00979c0cdf7da069515acdbb6be"
-  version = "v1"
-
-[[projects]]
   name = "github.com/fsnotify/fsnotify"
   packages = ["."]
   revision = "4da3e2cfbabc9f751898f250b49f2439785783a1"
+
+[[projects]]
+  name = "github.com/go-redis/redis"
+  packages = [
+    ".",
+    "internal",
+    "internal/consistenthash",
+    "internal/hashtag",
+    "internal/pool",
+    "internal/proto",
+    "internal/singleflight",
+    "internal/util"
+  ]
+  revision = "83fb42932f6145ce52df09860384a4653d2d332a"
+  version = "v6.12.0"
 
 [[projects]]
   name = "github.com/hashicorp/hcl"
@@ -102,11 +111,6 @@
   revision = "0967fc9aceab2ce9da34061253ac10fb99bba5b2"
 
 [[projects]]
-  name = "github.com/streadway/amqp"
-  packages = ["."]
-  revision = "dfe15e36048539f4cda41f240b27a5ca25b9cd46"
-
-[[projects]]
   name = "golang.org/x/sys"
   packages = ["unix"]
   revision = "dbc2be9168a660ef302e04b6ff6406de6f967473"
@@ -124,18 +128,6 @@
   revision = "19e51611da83d6be54ddafce4a4af510cb3e9ea4"
 
 [[projects]]
-  name = "gopkg.in/cyverse-de/messaging.v4"
-  packages = ["."]
-  revision = "bef7609a2fe6e9418eeb36906929abee2298cf93"
-  version = "v4"
-
-[[projects]]
-  name = "gopkg.in/cyverse-de/model.v2"
-  packages = ["."]
-  revision = "92391a997e436287d0d3be91b67d9c171d104aeb"
-  version = "v2.12"
-
-[[projects]]
   branch = "v2"
   name = "gopkg.in/yaml.v2"
   packages = ["."]
@@ -144,6 +136,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "26e10eead7c5b9c1fec5be4ff92fe3afe4a27b0b6648e994a7a350420a566bcf"
+  inputs-digest = "9914a2fb09b1a51e2256bf32fa1c8e79e11c415b2cfeb88dd1cded48ff7f8700"
   solver-name = "gps-cdcl"
   solver-version = 1
