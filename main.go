@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	_ "expvar"
@@ -44,7 +45,7 @@ func init() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 }
 
-func sendNotif(j *RunningJob, subject, msg string) error {
+func sendNotif(j *Job, subject, msg string) error {
 	var err error
 
 	// Don't send notification if things aren't configured correctly. It's
@@ -63,11 +64,11 @@ func sendNotif(j *RunningJob, subject, msg string) error {
 	u := ParseID(j.Username)
 
 	p := NewPayload()
-	p.AnalysisName = j.AnalysisName
-	p.AnalysisDescription = j.AnalysisDescription
-	p.AnalysisStatus = j.AnalysisStatus
-	p.AnalysisStartDate = j.AnalysisStartDate
-	p.AnalysisResultsFolder = j.AnalysisResultFolderPath
+	p.AnalysisName = j.Name
+	p.AnalysisDescription = j.Description
+	p.AnalysisStatus = j.Status
+	p.AnalysisStartDate = strconv.FormatInt(j.StartDate, 10)
+	p.AnalysisResultsFolder = j.ResultFolder
 	p.Email = user.Email
 	p.User = u
 
@@ -83,7 +84,7 @@ func sendNotif(j *RunningJob, subject, msg string) error {
 		return errors.Wrap(err, "failed to read notification response body")
 	}
 
-	logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.InvocationID, resp.Status, b)
+	logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.ID, resp.Status, b)
 
 	return nil
 }
@@ -154,6 +155,20 @@ func main() {
 			}
 
 			for _, j := range jl.Jobs {
+				subject := fmt.Sprintf(SubjectFormat, j.ID)
+				endtime := time.Unix(0, j.PlannedEndDate*1000000)
+				msg := fmt.Sprintf(
+					MessageFormat,
+					j.Name,
+					j.ID,
+					endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+					endtime.UTC().Format(time.UnixDate),
+					j.ResultFolder,
+				)
+				if err = sendNotif(&j, subject, msg); err != nil {
+					logger.Error(err)
+				}
+
 				if err = KillJob(*appsBase, j.ID, j.Username); err != nil {
 					logger.Error(err)
 				}
