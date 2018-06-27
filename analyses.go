@@ -7,6 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+
+	"github.com/cloudflare/cfssl/log"
+	"github.com/cyverse-de/messaging"
+	"github.com/streadway/amqp"
 )
 
 // Job contains the information about an analysis that we're interested in.
@@ -117,4 +121,122 @@ func KillJob(api, jobID, username string) error {
 
 	logger.Infof("response from %s was: %s", req.URL, string(body))
 	return nil
+}
+
+func lookupByExternalID(analysesURL, externalID string) (*Job, error) {
+	apiURL, err := url.Parse(analysesURL)
+	if err != nil {
+		return nil, err
+	}
+	apiURL.Path = filepath.Join(apiURL.Path, "external-id", externalID)
+
+	resp, err := http.Get(apiURL.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var j *Job
+	if err = json.NewDecoder(resp.Body).Decode(j); err != nil {
+		return nil, err
+	}
+
+	return j, nil
+}
+
+// StatusUpdate contains the information contained in a status update for an
+// analysis in the database
+type StatusUpdate struct {
+	ID                     string `json:"id"`          // The analysis ID
+	ExternalID             string `json:"external_id"` // Also referred to as invocation ID
+	Status                 string `json:"status"`
+	SentFrom               string `json:"sent_from"`
+	SentOn                 int64  `json:"sent_on"` // Not actually nullable.
+	Propagated             bool   `json:"propagated"`
+	PropagationAttempts    int64  `json:"propagation_attempts"`
+	LastPropagationAttempt int64  `json:"last_propagation_attempt"`
+	CreatedDate            int64  `json:"created_date"` // Not actually nullable.
+}
+
+// StatusUpdates is a list of StatusUpdates. Mostly exists for marshalling a
+// list into JSON in a format our other services generally expect.
+type StatusUpdates struct {
+	Updates []StatusUpdate `json:"status_updates"`
+}
+
+func lookupStatusUpdates(analysesURL, id string) (*StatusUpdates, error) {
+	apiURL, err := url.Parse(analysesURL)
+	if err != nil {
+		return nil, err
+	}
+	apiURL.Path = filepath.Join(apiURL.Path, "id", id, "status-updates")
+
+	resp, err := http.Get(apiURL.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var updates *StatusUpdates
+	if err = json.NewDecoder(resp.Body).Decode(updates); err != nil {
+		return nil, err
+	}
+
+	return updates, nil
+}
+
+func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
+	return func(delivery amqp.Delivery) {
+		var err error
+
+		if err = delivery.Ack(false); err != nil {
+			log.Error(err)
+		}
+
+		update := &messaging.UpdateMessage{}
+
+		if err = json.Unmarshal(delivery.Body, update); err != nil {
+			log.Error(err)
+			return
+		}
+
+		var externalID string
+		if update.Job.InvocationID == "" {
+			log.Error("external ID was not provided as the invocation ID in the status update, ignoring update")
+			return
+		}
+		externalID = update.Job.InvocationID
+
+		analysis, err := lookupByExternalID(analysesBaseURL, externalID)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+
+		// Get the list of status updates from analyses
+		updates, err := lookupStatusUpdates(analysesBaseURL, analysis.ID)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+
+		// Count the running status updates
+		var numRunning int
+		for _, update := range updates.Updates {
+			if update.Status == "Running" {
+				numRunning = numRunning + 1
+			}
+		}
+
+		if numRunning < 1 {
+			log.Infof("number of Running updates is %d, skipping for now", numRunning)
+			return
+		}
+
+		// Check to see if the planned_end_date is set for the analysis
+		if analysis.PlannedEndDate != 0 {
+			// There's nothing to do here, move along
+			return
+		}
+	}
 }
