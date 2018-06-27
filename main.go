@@ -20,6 +20,8 @@ import (
 	"github.com/spf13/viper"
 
 	_ "github.com/lib/pq"
+
+	"gopkg.in/cyverse-de/messaging.v4"
 )
 
 const defaultConfig = `db:
@@ -179,10 +181,37 @@ func main() {
 		log.Fatal(err)
 	}
 
+	amqpURI := cfg.GetString("amqp.uri")
+	if amqpURI == "" {
+		log.Fatal("amqp.uri must be set in the config file")
+	}
+
+	exchange := cfg.GetString("amqp.exchange.name")
+	if exchange == "" {
+		log.Fatal("amqp.exchange.name must be set in the config file")
+	}
+
+	exchangeType := cfg.GetString("amqp.exchange.type")
+	if exchangeType == "" {
+		log.Fatal("amqp.exchange.type must be set in the config file")
+	}
+
+	amqpclient, err := messaging.NewClient(amqpURI, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer amqpclient.Close()
+
+	go amqpclient.Listen()
+
 	redishost := cfg.GetString("redis.host")
+	if redishost == "" {
+		log.Fatal("redis.host must be set in the config file")
+	}
+
 	redisdb := cfg.GetInt("redis.db.number")
 
-	client := redis.NewClient(
+	redisclient := redis.NewClient(
 		&redis.Options{
 			Addr:     redishost,
 			Password: "",
@@ -190,7 +219,7 @@ func main() {
 		},
 	)
 
-	_, err = client.Ping().Result()
+	_, err = redisclient.Ping().Result()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -207,7 +236,7 @@ func main() {
 				logger.Error(err)
 			} else {
 				for _, w := range warnings.Jobs {
-					sent, err = client.SIsMember(*warningSentKey, w.ID).Result()
+					sent, err = redisclient.SIsMember(*warningSentKey, w.ID).Result()
 					if err != nil {
 						logger.Error(err)
 						continue
@@ -217,7 +246,7 @@ func main() {
 						if err = SendWarningNotification(&w); err != nil {
 							logger.Error(err)
 						} else {
-							if err = client.SAdd(*warningSentKey, w.ID).Err(); err != nil {
+							if err = redisclient.SAdd(*warningSentKey, w.ID).Err(); err != nil {
 								logger.Error(err)
 							}
 						}
@@ -238,7 +267,7 @@ func main() {
 					if err = SendKillNotification(&j); err != nil {
 						logger.Error(err)
 					}
-					if _, err = client.SRem(*warningSentKey, j.ID).Result(); err != nil {
+					if _, err = redisclient.SRem(*warningSentKey, j.ID).Result(); err != nil {
 						logger.Error(err)
 					}
 				}

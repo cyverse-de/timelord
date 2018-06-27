@@ -7,6 +7,12 @@
   revision = "7cb335597f9b972d380a6787a95b34f4a4705d5d"
 
 [[projects]]
+  name = "github.com/cyverse-de/model"
+  packages = ["submitfile"]
+  revision = "9435ba8c8862b1ced3af7d1bdb8b07ed6316a2aa"
+  version = "v3.0"
+
+[[projects]]
   name = "github.com/fsnotify/fsnotify"
   packages = ["."]
   revision = "4da3e2cfbabc9f751898f250b49f2439785783a1"
@@ -111,6 +117,12 @@
   revision = "0967fc9aceab2ce9da34061253ac10fb99bba5b2"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/streadway/amqp"
+  packages = ["."]
+  revision = "e5adc2ada8b8efff032bf61173a233d143e9318e"
+
+[[projects]]
   name = "golang.org/x/sys"
   packages = ["unix"]
   revision = "dbc2be9168a660ef302e04b6ff6406de6f967473"
@@ -128,6 +140,18 @@
   revision = "19e51611da83d6be54ddafce4a4af510cb3e9ea4"
 
 [[projects]]
+  name = "gopkg.in/cyverse-de/messaging.v4"
+  packages = ["."]
+  revision = "bef7609a2fe6e9418eeb36906929abee2298cf93"
+  version = "v4"
+
+[[projects]]
+  name = "gopkg.in/cyverse-de/model.v2"
+  packages = ["."]
+  revision = "92391a997e436287d0d3be91b67d9c171d104aeb"
+  version = "v2.12"
+
+[[projects]]
   branch = "v2"
   name = "gopkg.in/yaml.v2"
   packages = ["."]
@@ -136,6 +160,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "9914a2fb09b1a51e2256bf32fa1c8e79e11c415b2cfeb88dd1cded48ff7f8700"
+  inputs-digest = "95a63fb56ed3082c2bad5ef841f7a0790a402723a3a805f4e8949eb2a5645c4e"
   solver-name = "gps-cdcl"
   solver-version = 1
