@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"time"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cyverse-de/messaging"
@@ -185,6 +187,54 @@ func lookupStatusUpdates(analysesURL, id string) (*StatusUpdates, error) {
 	return updates, nil
 }
 
+// EndDatePatch will turn into a JSON body that can be passed to the analyses
+// service to set the planned_end_date for an Analysis/Job.
+type EndDatePatch struct {
+	PlannedEndDate int64 `json:"planned_end_date"`
+}
+
+func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
+	apiURL, err := url.Parse(analysesURL)
+	if err != nil {
+		return err
+	}
+	apiURL.Path = filepath.Join(apiURL.Path, "id", id)
+
+	ped := &EndDatePatch{
+		PlannedEndDate: millisSinceEpoch,
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+
+	if err = json.NewEncoder(buf).Encode(ped); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, apiURL.String(), buf)
+	if err != nil {
+		return err
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	logger.Infof("response from %s was: %s", req.URL, string(body))
+
+	return nil
+}
+
+// CreateMessageHandler returns a function that can be used by the messaging
+// package to handle job status messages. The handler will set the planned
+// end date for an analysis if it's not already set.
 func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 	return func(delivery amqp.Delivery) {
 		var err error
@@ -237,6 +287,13 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 		if analysis.PlannedEndDate != 0 {
 			// There's nothing to do here, move along
 			return
+		}
+
+		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
+		// then convert back to milliseconds.
+		endDate := time.Unix(0, analysis.StartDate*1000000).Add(48*time.Hour).UnixNano() / 1000000
+		if err = setPlannedEndDate(analysesBaseURL, analysis.ID, endDate); err != nil {
+			log.Error(err)
 		}
 	}
 }
