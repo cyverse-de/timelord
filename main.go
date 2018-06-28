@@ -171,15 +171,19 @@ func main() {
 		log.Fatal(err)
 	}
 
+	logger.Info("configuring notification support...")
 	// configure the notification emitters
 	if err = ConfigureNotifications(cfg, notifPath); err != nil {
 		log.Fatal(err)
 	}
+	logger.Info("done configuring notification support")
 
+	logger.Info("configuring user lookups...")
 	// configure the user lookups
 	if err = ConfigureUserLookups(cfg); err != nil {
 		log.Fatal(err)
 	}
+	logger.Info("done configuring user lookups")
 
 	amqpURI := cfg.GetString("amqp.uri")
 	if amqpURI == "" {
@@ -196,11 +200,13 @@ func main() {
 		log.Fatal("amqp.exchange.type must be set in the config file")
 	}
 
+	logger.Info("configuring messaging support...")
 	amqpclient, err := messaging.NewClient(amqpURI, false)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer amqpclient.Close()
+	logger.Info("done configuring messaging support")
 
 	go amqpclient.Listen()
 
@@ -221,6 +227,7 @@ func main() {
 
 	redisdb := cfg.GetInt("redis.db.number")
 
+	logger.Info("configuring redis support...")
 	redisclient := redis.NewClient(
 		&redis.Options{
 			Addr:     fmt.Sprintf("%s:%d", redishost, redisport),
@@ -233,6 +240,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	logger.Info("done configuring redis support")
 
 	go func() {
 		var (
@@ -246,6 +254,7 @@ func main() {
 				logger.Error(err)
 			} else {
 				for _, w := range warnings.Jobs {
+					logger.Info("checking redis set to see if warning has already been sent for analysis %s", w.ID)
 					sent, err = redisclient.SIsMember(*warningSentKey, w.ID).Result()
 					if err != nil {
 						logger.Error(err)
@@ -253,9 +262,11 @@ func main() {
 					}
 
 					if !sent {
+						logger.Info("sending warning notification for analysis %s", w.ID)
 						if err = SendWarningNotification(&w); err != nil {
 							logger.Error(err)
 						} else {
+							logger.Info("adding analysis ID %s to redis set to mark warning as having been sent", w.ID)
 							if err = redisclient.SAdd(*warningSentKey, w.ID).Err(); err != nil {
 								logger.Error(err)
 							}
@@ -264,6 +275,7 @@ func main() {
 				}
 			}
 
+			logger.Info("getting list of analyses that need to be terminated")
 			jl, err = JobsToKill(*analysesBase)
 			if err != nil {
 				logger.Error(err)
@@ -271,12 +283,15 @@ func main() {
 			}
 
 			for _, j := range jl.Jobs {
+				logger.Info("analysis %s is being terminated", j.ID)
 				if err = KillJob(*appsBase, j.ID, j.Username); err != nil {
 					logger.Error(err)
 				} else {
+					logger.Info("sending notification that %s has been terminated", j.ID)
 					if err = SendKillNotification(&j); err != nil {
 						logger.Error(err)
 					}
+					logger.Info("removing analysis ID %s from the redis set", j.ID)
 					if _, err = redisclient.SRem(*warningSentKey, j.ID).Result(); err != nil {
 						logger.Error(err)
 					}
