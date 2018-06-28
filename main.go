@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "expvar"
@@ -207,6 +208,10 @@ func main() {
 	redishost := cfg.GetString("redis.host")
 	if redishost == "" {
 		log.Fatal("redis.host must be set in the config file")
+	}
+
+	if !strings.Contains(redishost, ":") {
+		redishost = fmt.Sprintf("%s:6379", redishost)
 	}
 
 	redisdb := cfg.GetInt("redis.db.number")
