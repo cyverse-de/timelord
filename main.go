@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	_ "expvar"
@@ -210,16 +209,22 @@ func main() {
 		log.Fatal("redis.host must be set in the config file")
 	}
 
-	if !strings.Contains(redishost, ":") {
-		redishost = fmt.Sprintf("%s:6379", redishost)
+	redisport := cfg.GetInt("redis.port")
+	if redisport == 0 {
+		log.Fatal("redis.port must be set in the config file")
+	}
+
+	redispass := cfg.GetString("redis.password")
+	if redispass == "" {
+		log.Fatal("redis.password must be set in the config file")
 	}
 
 	redisdb := cfg.GetInt("redis.db.number")
 
 	redisclient := redis.NewClient(
 		&redis.Options{
-			Addr:     redishost,
-			Password: "",
+			Addr:     fmt.Sprintf("%s:%d", redishost, redisport),
+			Password: redispass,
 			DB:       redisdb,
 		},
 	)
