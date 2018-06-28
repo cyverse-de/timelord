@@ -15,6 +15,9 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// SystemIDInteractive is the system ID for interactive jobs.
+const SystemIDInteractive = "interactive"
+
 // Job contains the information about an analysis that we're interested in.
 type Job struct {
 	ID             string `json:"id"`
@@ -27,6 +30,7 @@ type Job struct {
 	ResultFolder   string `json:"result_folder"`
 	StartDate      int64  `json:"start_date"`
 	PlannedEndDate int64  `json:"planned_end_date"`
+	SystemID       string `json:"system_id"`
 }
 
 // JobList is a list of Jobs, serializable in JSON the way that we typically
@@ -260,6 +264,11 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 		analysis, err := lookupByExternalID(analysesBaseURL, externalID)
 		if err != nil {
 			log.Error(err)
+			return
+		}
+
+		if analysis.SystemID != SystemIDInteractive {
+			log.Infof("analysis %s is not interactive, so move along", analysis.ID)
 			return
 		}
 
