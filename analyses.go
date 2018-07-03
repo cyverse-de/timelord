@@ -249,6 +249,8 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 
 		update := &messaging.UpdateMessage{}
 
+		log.Infof("body of update: '%s'", string(delivery.Body))
+
 		if err = json.Unmarshal(delivery.Body, update); err != nil {
 			log.Error(err)
 			return
