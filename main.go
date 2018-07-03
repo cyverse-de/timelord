@@ -210,6 +210,15 @@ func main() {
 
 	go amqpclient.Listen()
 
+	amqpclient.AddConsumer(
+		exchange,
+		exchangeType,
+		"timelord",
+		messaging.UpdatesKey,
+		CreateMessageHandler(*analysesBase),
+		0,
+	)
+
 	redishost := cfg.GetString("redis.host")
 	if redishost == "" {
 		log.Fatal("redis.host must be set in the config file")
