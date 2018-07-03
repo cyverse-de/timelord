@@ -143,8 +143,15 @@ func lookupByExternalID(analysesURL, externalID string) (*Job, error) {
 	}
 	defer resp.Body.Close()
 
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("response body of external id lookup was: '%s'", string(b))
+
 	var j *Job
-	if err = json.NewDecoder(resp.Body).Decode(j); err != nil {
+	if err = json.NewDecoder(bytes.NewReader(b)).Decode(j); err != nil {
 		return nil, err
 	}
 
