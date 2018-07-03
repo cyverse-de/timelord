@@ -58,7 +58,8 @@ type Container struct {
 	InteractiveApps InteractiveApps `json:"interactive_apps"`
 	MemoryLimit     int64           `json:"memory_limit"`     // The maximum the container is allowed to have.
 	MinMemoryLimit  int64           `json:"min_memory_limit"` // The minimum the container needs.
-	MinCPUCores     int             `json:"min_cpu_cores"`    // The minimum number of cores the container needs.
+	MaxCPUCores     float32         `json:"max_cpu_cores"`    // The maximum number of cores the container needs.
+	MinCPUCores     float32         `json:"min_cpu_cores"`    // The minimum number of cores the container needs.
 	MinDiskSpace    int64           `json:"min_disk_space"`   // The minimum amount of disk space that the container needs.
 	PIDsLimit       int64           `json:"pids_limit"`
 	Image           ContainerImage  `json:"image"`

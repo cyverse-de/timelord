@@ -30,4 +30,8 @@
 
 [[constraint]]
   name = "gopkg.in/cyverse-de/messaging.v4"
-  version = "4.0.0"
+  branch = "v4.1"
+
+[[constraint]]
+  name = "gopkg.in/cyverse-de/model.v3"
+  version = "3.0.0"

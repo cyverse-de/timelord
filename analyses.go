@@ -11,8 +11,9 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cyverse-de/messaging"
 	"github.com/streadway/amqp"
+	"gopkg.in/cyverse-de/messaging.v4"
+	"gopkg.in/cyverse-de/model.v3"
 )
 
 // SystemIDInteractive is the system ID for interactive jobs.
@@ -247,7 +248,9 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 			log.Error(err)
 		}
 
-		update := &messaging.UpdateMessage{}
+		update := &messaging.UpdateMessage{
+			Job: &model.Job{},
+		}
 
 		log.Infof("body of update: '%s'", string(delivery.Body))
 
