@@ -150,7 +150,7 @@ func lookupByExternalID(analysesURL, externalID string) (*Job, error) {
 
 	log.Infof("response body of external id lookup was: '%s'", string(b))
 
-	var j *Job
+	j := &Job{}
 	if err = json.Unmarshal(b, j); err != nil {
 		return nil, errors.Wrap(err, "error unmarshaling json in response body")
 	}
