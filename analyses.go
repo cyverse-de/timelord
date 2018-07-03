@@ -133,26 +133,26 @@ func KillJob(api, jobID, username string) error {
 func lookupByExternalID(analysesURL, externalID string) (*Job, error) {
 	apiURL, err := url.Parse(analysesURL)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "error parsing URL %s", analysesURL)
 	}
 	apiURL.Path = filepath.Join(apiURL.Path, "external-id", externalID)
 
 	resp, err := http.Get(apiURL.String())
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "error doing GET %s", apiURL.String())
 	}
 	defer resp.Body.Close()
 
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error reading response body")
 	}
 
 	log.Infof("response body of external id lookup was: '%s'", string(b))
 
 	var j *Job
-	if err = json.NewDecoder(bytes.NewReader(b)).Decode(j); err != nil {
-		return nil, err
+	if err = json.Unmarshal(b, j); err != nil {
+		return nil, errors.Wrap(err, "error unmarshaling json in response body")
 	}
 
 	return j, nil
