@@ -206,7 +206,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer amqpclient.Close()
-	logger.Info("done configuring messaging support")
 
 	go amqpclient.Listen()
 
@@ -218,6 +217,7 @@ func main() {
 		CreateMessageHandler(*analysesBase),
 		0,
 	)
+	logger.Info("done configuring messaging support")
 
 	redishost := cfg.GetString("redis.host")
 	if redishost == "" {
