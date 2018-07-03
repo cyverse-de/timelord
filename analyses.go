@@ -181,19 +181,19 @@ type StatusUpdates struct {
 func lookupStatusUpdates(analysesURL, id string) (*StatusUpdates, error) {
 	apiURL, err := url.Parse(analysesURL)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "error parsing URL %s", analysesURL)
 	}
 	apiURL.Path = filepath.Join(apiURL.Path, "id", id, "status-updates")
 
 	resp, err := http.Get(apiURL.String())
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "error doing GET %s", apiURL.String())
 	}
 	defer resp.Body.Close()
 
 	var updates *StatusUpdates
 	if err = json.NewDecoder(resp.Body).Decode(updates); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error decoding response body of status update lookup")
 	}
 
 	return updates, nil
