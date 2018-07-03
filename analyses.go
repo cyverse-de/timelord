@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
+	"github.com/pkg/errors"
 	"github.com/streadway/amqp"
 	"gopkg.in/cyverse-de/messaging.v4"
-	"gopkg.in/cyverse-de/model.v3"
 )
 
 // SystemIDInteractive is the system ID for interactive jobs.
@@ -248,14 +248,10 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 			log.Error(err)
 		}
 
-		update := &messaging.UpdateMessage{
-			Job: &model.Job{},
-		}
-
-		log.Infof("body of update: '%s'", string(delivery.Body))
+		update := &messaging.UpdateMessage{}
 
 		if err = json.Unmarshal(delivery.Body, update); err != nil {
-			log.Error(err)
+			log.Error(errors.Wrap(err, "error unmarshaling body of update message"))
 			return
 		}
 
@@ -268,7 +264,7 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 
 		analysis, err := lookupByExternalID(analysesBaseURL, externalID)
 		if err != nil {
-			log.Error(err)
+			log.Error(errors.Wrapf(err, "error looking up analysis by external ID '%s'", externalID))
 			return
 		}
 
@@ -280,7 +276,7 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 		// Get the list of status updates from analyses
 		updates, err := lookupStatusUpdates(analysesBaseURL, analysis.ID)
 		if err != nil {
-			log.Error(err)
+			log.Error(errors.Wrapf(err, "error looking up status updates for analysis '%s'", analysis.ID))
 			return
 		}
 
@@ -307,7 +303,7 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 		// then convert back to milliseconds.
 		endDate := time.Unix(0, analysis.StartDate*1000000).Add(48*time.Hour).UnixNano() / 1000000
 		if err = setPlannedEndDate(analysesBaseURL, analysis.ID, endDate); err != nil {
-			log.Error(err)
+			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}
 	}
 }
