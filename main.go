@@ -118,7 +118,7 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 // their job has been killed.
 func SendKillNotification(j *Job) error {
 	subject := fmt.Sprintf(KillSubjectFormat, j.ID)
-	endtime := time.Unix(0, j.PlannedEndDate*1000000)
+	endtime := time.Unix(0, *j.PlannedEndDate*1000000)
 	msg := fmt.Sprintf(
 		KillMessageFormat,
 		j.Name,
@@ -134,7 +134,7 @@ func SendKillNotification(j *Job) error {
 // SendWarningNotification sends a notification to the user telling them that
 // their job will be killed in the near future.
 func SendWarningNotification(j *Job) error {
-	endtime := time.Unix(0, j.PlannedEndDate*1000000)
+	endtime := time.Unix(0, *j.PlannedEndDate*1000000)
 	endtimeMST := endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006")
 	endtimeUTC := endtime.UTC().Format(time.UnixDate)
 	subject := fmt.Sprintf(WarningSubjectFormat, j.ID, endtimeMST, endtimeUTC)

@@ -30,7 +30,7 @@ type Job struct {
 	Name           string `json:"name"`
 	ResultFolder   string `json:"result_folder"`
 	StartDate      int64  `json:"start_date"`
-	PlannedEndDate int64  `json:"planned_end_date"`
+	PlannedEndDate *int64 `json:"planned_end_date"`
 	SystemID       string `json:"system_id"`
 }
 
@@ -301,7 +301,7 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 		}
 
 		// Check to see if the planned_end_date is set for the analysis
-		if analysis.PlannedEndDate != 0 {
+		if *analysis.PlannedEndDate != 0 {
 			// There's nothing to do here, move along
 			return
 		}
