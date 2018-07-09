@@ -191,7 +191,7 @@ func lookupStatusUpdates(analysesURL, id string) (*StatusUpdates, error) {
 	}
 	defer resp.Body.Close()
 
-	var updates *StatusUpdates
+	updates := &StatusUpdates{}
 	if err = json.NewDecoder(resp.Body).Decode(updates); err != nil {
 		return nil, errors.Wrap(err, "error decoding response body of status update lookup")
 	}
