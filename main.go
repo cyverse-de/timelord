@@ -292,7 +292,7 @@ func main() {
 			}
 
 			for _, j := range jl.Jobs {
-				logger.Info("analysis %s is being terminated", j.ID)
+				logger.Infof("analysis %s is being terminated", j.ID)
 				if err = KillJob(*appsBase, j.ID, j.Username); err != nil {
 					logger.Error(err)
 				} else {
