@@ -208,7 +208,7 @@ type EndDatePatch struct {
 func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
 	apiURL, err := url.Parse(analysesURL)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "error parsing URL %s", analysesURL)
 	}
 	apiURL.Path = filepath.Join(apiURL.Path, "id", id)
 
@@ -216,30 +216,29 @@ func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
 		PlannedEndDate: millisSinceEpoch,
 	}
 
-	buf := bytes.NewBuffer([]byte{})
-
-	if err = json.NewEncoder(buf).Encode(ped); err != nil {
-		return err
+	buf, err := json.Marshal(ped)
+	if err != nil {
+		return errors.Wrap(err, "error marshalling JSON for setting planned end date")
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, apiURL.String(), buf)
+	req, err := http.NewRequest(http.MethodPatch, apiURL.String(), bytes.NewReader(buf))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "error creating request for PATCH %s %s", apiURL.String(), string(buf))
 	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "error performing request PATCH %s %s", apiURL.String(), string(buf))
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "error reading response body for request PATCH %s %s", apiURL.String(), string(buf))
 	}
 
-	logger.Infof("response from POST %s was: %s", req.URL, string(body))
+	logger.Infof("response from PATCH %s was: %s", req.URL, string(body))
 
 	return nil
 }
