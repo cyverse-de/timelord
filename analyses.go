@@ -333,7 +333,7 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 		}
 
 		// Check to see if the planned_end_date is set for the analysis
-		if *analysis.PlannedEndDate != 0 {
+		if analysis.PlannedEndDate != nil && *analysis.PlannedEndDate != 0 {
 			// There's nothing to do here, move along
 			return
 		}
