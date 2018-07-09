@@ -259,7 +259,7 @@ func isInteractive(analysesURL, id string) (bool, error) {
 
 	retval := map[string]bool{}
 
-	if err = json.NewDecoder(resp.Body).Decode(retval); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&retval); err != nil {
 		return false, errors.Wrap(err, "error decoding body of response")
 	}
 
