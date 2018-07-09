@@ -244,6 +244,32 @@ func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
 	return nil
 }
 
+func isInteractive(analysesURL, id string) (bool, error) {
+	apiURL, err := url.Parse(analysesURL)
+	if err != nil {
+		return false, errors.Wrapf(err, "error parsing URL %s", analysesURL)
+	}
+	apiURL.Path = filepath.Join(apiURL.Path, "id", id, "interactive")
+
+	resp, err := http.Get(apiURL.String())
+	if err != nil {
+		return false, errors.Wrapf(err, "error doing GET %s", apiURL.String())
+	}
+	defer resp.Body.Close()
+
+	retval := map[string]bool{}
+
+	if err = json.NewDecoder(resp.Body).Decode(retval); err != nil {
+		return false, errors.Wrap(err, "error decoding body of response")
+	}
+
+	if _, ok := retval["interactive"]; !ok {
+		return false, errors.Wrapf(err, "key 'interactive' not found in map '%+v'", retval)
+	}
+
+	return retval["interactive"], nil
+}
+
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
@@ -275,7 +301,13 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 			return
 		}
 
-		if analysis.SystemID != SystemIDInteractive {
+		analysisIsInteractive, err := isInteractive(analysesBaseURL, analysis.ID)
+		if err != nil {
+			log.Error(errors.Wrapf(err, "error looking up interactive status for analysis %s", analysis.ID))
+			return
+		}
+
+		if !analysisIsInteractive {
 			log.Infof("analysis %s is not interactive, so move along", analysis.ID)
 			return
 		}
