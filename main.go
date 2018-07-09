@@ -49,7 +49,7 @@ func sendNotif(j *Job, status, subject, msg string) error {
 	// Don't send notification if things aren't configured correctly. It's
 	// technically not an error, for now.
 	if NotifsURI == "" || UsersURI == "" {
-		logger.Info("notification URI is %s and iplant-groups URI is %s", NotifsURI, UsersURI)
+		logger.Infof("notification URI is %s and iplant-groups URI is %s", NotifsURI, UsersURI)
 		return nil
 	}
 
@@ -262,7 +262,7 @@ func main() {
 				logger.Error(err)
 			} else {
 				for _, w := range warnings.Jobs {
-					logger.Info("checking redis set to see if warning has already been sent for analysis %s", w.ID)
+					logger.Infof("checking redis set to see if warning has already been sent for analysis %s", w.ID)
 					sent, err = redisclient.SIsMember(*warningSentKey, w.ID).Result()
 					if err != nil {
 						logger.Error(err)
@@ -270,11 +270,11 @@ func main() {
 					}
 
 					if !sent {
-						logger.Info("sending warning notification for analysis %s", w.ID)
+						logger.Infof("sending warning notification for analysis %s", w.ID)
 						if err = SendWarningNotification(&w); err != nil {
 							logger.Error(err)
 						} else {
-							logger.Info("adding analysis ID %s to redis set to mark warning as having been sent", w.ID)
+							logger.Infof("adding analysis ID %s to redis set to mark warning as having been sent", w.ID)
 							if err = redisclient.SAdd(*warningSentKey, w.ID).Err(); err != nil {
 								logger.Error(err)
 							}
