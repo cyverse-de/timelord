@@ -27,7 +27,7 @@ import (
 const defaultConfig = `db:
   uri: "db:5432"
 notifications:
-  base: http://notifications:60000
+  base: http://notification-agent
 iplant_groups:
   base: http://iplant-groups
   user: grouper-user
