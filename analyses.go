@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
@@ -118,8 +119,15 @@ func KillJob(api, jobID, username string) error {
 		return err
 	}
 
+	var shortusername string
+	userparts := strings.Split(username, "@")
+	if len(userparts) > 1 {
+		shortusername = userparts[0]
+	} else {
+		shortusername = username
+	}
 	q := req.URL.Query()
-	q.Add("user", username)
+	q.Add("user", shortusername)
 	req.URL.RawQuery = q.Encode()
 
 	client := &http.Client{}
@@ -130,7 +138,7 @@ func KillJob(api, jobID, username string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+		return fmt.Errorf("response status code for GET %s was %d as %s", apiURL.String(), resp.StatusCode, username)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)

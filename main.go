@@ -296,11 +296,11 @@ func main() {
 				if err = KillJob(*appsBase, j.ID, j.Username); err != nil {
 					logger.Error(err)
 				} else {
-					logger.Info("sending notification that %s has been terminated", j.ID)
+					logger.Infof("sending notification that %s has been terminated", j.ID)
 					if err = SendKillNotification(&j); err != nil {
 						logger.Error(err)
 					}
-					logger.Info("removing analysis ID %s from the redis set", j.ID)
+					logger.Infof("removing analysis ID %s from the redis set", j.ID)
 					if _, err = redisclient.SRem(*warningSentKey, j.ID).Result(); err != nil {
 						logger.Error(err)
 					}
