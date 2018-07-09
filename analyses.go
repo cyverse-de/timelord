@@ -113,7 +113,7 @@ func KillJob(api, jobID, username string) error {
 
 	apiURL.Path = filepath.Join(apiURL.Path, "analyses", jobID, "stop")
 
-	req, err := http.NewRequest(http.MethodGet, apiURL.String(), nil)
+	req, err := http.NewRequest(http.MethodPost, apiURL.String(), nil)
 	if err != nil {
 		return err
 	}
