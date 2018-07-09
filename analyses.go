@@ -55,6 +55,10 @@ func JobsToKill(api string) (*JobList, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	}
+
 	joblist := &JobList{
 		Jobs: []Job{},
 	}
@@ -81,6 +85,10 @@ func JobKillWarnings(api string, minutes int64) (*JobList, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	}
 
 	joblist := &JobList{
 		Jobs: []Job{},
@@ -121,6 +129,10 @@ func KillJob(api, jobID, username string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
@@ -142,6 +154,10 @@ func lookupByExternalID(analysesURL, externalID string) (*Job, error) {
 		return nil, errors.Wrapf(err, "error doing GET %s", apiURL.String())
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	}
 
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -191,6 +207,10 @@ func lookupStatusUpdates(analysesURL, id string) (*StatusUpdates, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	}
+
 	updates := &StatusUpdates{}
 	if err = json.NewDecoder(resp.Body).Decode(updates); err != nil {
 		return nil, errors.Wrap(err, "error decoding response body of status update lookup")
@@ -233,6 +253,10 @@ func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("response status code for PATCH %s was %d", apiURL.String(), resp.StatusCode)
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return errors.Wrapf(err, "error reading response body for request PATCH %s %s", apiURL.String(), string(buf))
@@ -255,6 +279,10 @@ func isInteractive(analysesURL, id string) (bool, error) {
 		return false, errors.Wrapf(err, "error doing GET %s", apiURL.String())
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return false, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	}
 
 	retval := map[string]bool{}
 
