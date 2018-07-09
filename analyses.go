@@ -222,7 +222,7 @@ func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, apiURL.String(), buf)
+	req, err := http.NewRequest(http.MethodPatch, apiURL.String(), buf)
 	if err != nil {
 		return err
 	}
@@ -239,7 +239,7 @@ func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
 		return err
 	}
 
-	logger.Infof("response from %s was: %s", req.URL, string(body))
+	logger.Infof("response from POST %s was: %s", req.URL, string(body))
 
 	return nil
 }
