@@ -43,7 +43,7 @@ func init() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 }
 
-func sendNotif(j *Job, subject, msg string) error {
+func sendNotif(j *Job, status, subject, msg string) error {
 	var err error
 
 	// Don't send notification if things aren't configured correctly. It's
@@ -64,7 +64,7 @@ func sendNotif(j *Job, subject, msg string) error {
 	p := NewPayload()
 	p.AnalysisName = j.Name
 	p.AnalysisDescription = j.Description
-	p.AnalysisStatus = j.Status
+	p.AnalysisStatus = status
 	p.AnalysisStartDate = strconv.FormatInt(j.StartDate, 10)
 	p.AnalysisResultsFolder = j.ResultFolder
 	p.Email = user.Email
@@ -117,7 +117,7 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 // SendKillNotification sends a notification to the user telling them that
 // their job has been killed.
 func SendKillNotification(j *Job) error {
-	subject := fmt.Sprintf(KillSubjectFormat, j.ID)
+	subject := fmt.Sprintf(KillSubjectFormat, j.Name)
 	endtime := time.Unix(0, *j.PlannedEndDate*1000000)
 	msg := fmt.Sprintf(
 		KillMessageFormat,
@@ -127,8 +127,7 @@ func SendKillNotification(j *Job) error {
 		endtime.UTC().Format(time.UnixDate),
 		j.ResultFolder,
 	)
-
-	return sendNotif(j, subject, msg)
+	return sendNotif(j, "Canceled", subject, msg)
 }
 
 // SendWarningNotification sends a notification to the user telling them that
@@ -148,7 +147,7 @@ func SendWarningNotification(j *Job) error {
 		j.ResultFolder,
 	)
 
-	return sendNotif(j, subject, msg)
+	return sendNotif(j, j.Status, subject, msg)
 }
 
 func main() {
