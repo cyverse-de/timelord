@@ -136,7 +136,7 @@ func SendWarningNotification(j *Job) error {
 	endtime := time.Unix(0, *j.PlannedEndDate*1000000)
 	endtimeMST := endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006")
 	endtimeUTC := endtime.UTC().Format(time.UnixDate)
-	subject := fmt.Sprintf(WarningSubjectFormat, j.ID, endtimeMST, endtimeUTC)
+	subject := fmt.Sprintf(WarningSubjectFormat, j.Name, endtimeMST, endtimeUTC)
 
 	msg := fmt.Sprintf(
 		WarningMessageFormat,
