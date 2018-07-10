@@ -159,7 +159,7 @@ func main() {
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
 		analysesBase    = flag.String("analyses", "http://analyses", "The base URL for analyses service.")
-		warningInterval = flag.Int64("warning-interval", 10, "The number of minutes in advance to warn users about job kills.")
+		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the Redis set containing job IDs as members. Used to track warning notifications.")
 	)
 
