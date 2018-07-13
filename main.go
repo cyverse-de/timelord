@@ -54,12 +54,12 @@ func sendNotif(j *Job, status, subject, msg string) error {
 	}
 
 	// We need to get the user's email address from the iplant-groups service.
-	user := NewUser(ParseID(j.Username))
+	user := NewUser(ParseID(j.User.Username))
 	if err = user.Get(); err != nil {
 		return errors.Wrap(err, "failed to get user info")
 	}
 
-	u := ParseID(j.Username)
+	u := ParseID(j.User.Username)
 
 	p := NewPayload()
 	p.AnalysisName = j.Name
@@ -159,6 +159,7 @@ func main() {
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
 		analysesBase    = flag.String("analyses", "http://analyses", "The base URL for analyses service.")
+		graphqlBase     = flag.String("graphql", "http://hasura/v1alpha1/graphql", "The base URL for the graphql provider.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the Redis set containing job IDs as members. Used to track warning notifications.")
 	)
@@ -252,8 +253,9 @@ func main() {
 
 	go func() {
 		var (
-			jl, warnings *JobList
-			sent         bool
+			jl       []Job
+			warnings *JobList
+			sent     bool
 		)
 
 		for {
@@ -284,15 +286,15 @@ func main() {
 			}
 
 			logger.Info("getting list of analyses that need to be terminated")
-			jl, err = JobsToKill(*analysesBase)
+			jl, err = JobsToKill(*graphqlBase)
 			if err != nil {
 				logger.Error(err)
 				continue
 			}
 
-			for _, j := range jl.Jobs {
+			for _, j := range jl {
 				logger.Infof("analysis %s is being terminated", j.ID)
-				if err = KillJob(*appsBase, j.ID, j.Username); err != nil {
+				if err = KillJob(*appsBase, j.ID, j.User.Username); err != nil {
 					logger.Error(err)
 				} else {
 					logger.Infof("sending notification that %s has been terminated", j.ID)

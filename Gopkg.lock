@@ -62,6 +62,12 @@
   revision = "2704adc878c21e1329f46f6e56a1c387d788ff94"
 
 [[projects]]
+  name = "github.com/machinebox/graphql"
+  packages = ["."]
+  revision = "05b17f3157491bbfa5d6fc2006443a272d960d15"
+  version = "v0.2.2"
+
+[[projects]]
   name = "github.com/magiconair/properties"
   packages = ["."]
   revision = "51463bfca2576e06c62a8504b5c0f06d61312647"
@@ -166,6 +172,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "aed0d3b8f352a950db3737466ac5f9f899f52d3d387f146169b0529358e60909"
+  inputs-digest = "b16e9a66326fb9ead82f760660f1dcadbf8086ddb2638f216cdfce3ebd03df90"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
+	"github.com/machinebox/graphql"
 	"github.com/pkg/errors"
 	"github.com/streadway/amqp"
 	"gopkg.in/cyverse-de/messaging.v4"
@@ -20,19 +22,29 @@ import (
 // SystemIDInteractive is the system ID for interactive jobs.
 const SystemIDInteractive = "interactive"
 
+// JobType contains the system ID for a job.
+type JobType struct {
+	SystemID string `json:"system_id"`
+}
+
+// JobUser contains user information associated with a job.
+type JobUser struct {
+	Username string `json:"username"`
+}
+
 // Job contains the information about an analysis that we're interested in.
 type Job struct {
-	ID             string `json:"id"`
-	AppID          string `json:"app_id"`
-	UserID         string `json:"user_id"`
-	Username       string `json:"username"`
-	Status         string `json:"status"`
-	Description    string `json:"description"`
-	Name           string `json:"name"`
-	ResultFolder   string `json:"result_folder"`
-	StartDate      int64  `json:"start_date"`
-	PlannedEndDate *int64 `json:"planned_end_date"`
-	SystemID       string `json:"system_id"`
+	ID             string  `json:"id"`
+	AppID          string  `json:"app_id"`
+	UserID         string  `json:"user_id"`
+	Status         string  `json:"status"`
+	Description    string  `json:"description"`
+	Name           string  `json:"name"`
+	ResultFolder   string  `json:"result_folder"`
+	StartDate      int64   `json:"start_date"`
+	PlannedEndDate *int64  `json:"planned_end_date"`
+	Type           JobType `json:"type"`
+	User           JobUser `json:"user"`
 }
 
 // JobList is a list of Jobs, serializable in JSON the way that we typically
@@ -41,34 +53,52 @@ type JobList struct {
 	Jobs []Job `json:"jobs"`
 }
 
+const jobsToKillQuery = `
+query Jobs($status: String, $planned_end_date: timestamp){
+  jobs(where: {status: {_eq: $status}, planned_end_date: {_lte: $planned_end_date}}) {
+    id
+    app_id
+    user_id
+    status
+    description: job_description
+    name: job_name
+    result_folder: result_folder_path
+    planned_end_date
+    type: jobTypesByjobTypeId {
+      system_id
+    }
+    user: usersByuserId {
+      username
+    }
+  }
+}
+`
+
 // JobsToKill returns a list of running jobs that are past their expiration date
 // and can be killed off. 'api' should be the base URL for the analyses service.
-func JobsToKill(api string) (*JobList, error) {
-	apiURL, err := url.Parse(api)
-	if err != nil {
-		return nil, err
-	}
-	apiURL.Path = filepath.Join(apiURL.Path, "/expired/running")
+func JobsToKill(api string) ([]Job, error) {
+	var (
+		err error
+		ok  bool
+	)
 
-	resp, err := http.Get(apiURL.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	client := graphql.NewClient(api)
 
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
-	}
+	req := graphql.NewRequest(jobsToKillQuery)
+	req.Var("status", "Running")
+	req.Var("planned_end_date", time.Now().Format("2006-01-02 03:04:05.000000-07"))
 
-	joblist := &JobList{
-		Jobs: []Job{},
-	}
+	data := map[string][]Job{}
 
-	if err = json.NewDecoder(resp.Body).Decode(joblist); err != nil {
+	if err = client.Run(context.Background(), req, &data); err != nil {
 		return nil, err
 	}
 
-	return joblist, nil
+	if _, ok = data["jobs"]; !ok {
+		return nil, errors.New("missing jobs field in graphql response")
+	}
+
+	return data["jobs"], nil
 }
 
 // JobKillWarnings returns a list of running jobs that are set to be killed
