@@ -428,26 +428,6 @@ func CreateMessageHandler(graphqlBaseURL, analysesBaseURL string) func(amqp.Deli
 			return
 		}
 
-		// // Get the list of status updates from analyses
-		// updates, err := lookupStatusUpdates(analysesBaseURL, analysis.ID)
-		// if err != nil {
-		// 	log.Error(errors.Wrapf(err, "error looking up status updates for analysis '%s'", analysis.ID))
-		// 	return
-		// }
-		//
-		// // Count the running status updates
-		// var numRunning int
-		// for _, update := range updates.Updates {
-		// 	if update.Status == "Running" {
-		// 		numRunning = numRunning + 1
-		// 	}
-		// }
-
-		// if numRunning < 1 {
-		// 	log.Infof("number of Running updates for analysis %s is %d, skipping for now", analysis.ID, numRunning)
-		// 	return
-		// }
-
 		if update.State != "Running" {
 			log.Infof("job status update for %s was %s, moving along", analysis.ID, update.State)
 			return
@@ -460,17 +440,6 @@ func CreateMessageHandler(graphqlBaseURL, analysesBaseURL string) func(amqp.Deli
 			log.Infof("planned end date for %s is set to %s, nothing to do", analysis.ID, analysis.PlannedEndDate)
 			return // it's already set, so move along.
 		}
-		// plannedEndDate, err := time.Parse(TimestampFromDBFormat, analysis.PlannedEndDate)
-		// if err != nil {
-		// 	log.Error(errors.Wrapf(err, "error parsing planned end date field %s", analysis.PlannedEndDate))
-		// 	return
-		// }
-		// pedmillis := plannedEndDate.UnixNano() / 1000000
-		//
-		// if pedmillis != 0 {
-		// 	// There's nothing to do here, move along
-		// 	return
-		// }
 
 		startDate, err := time.Parse(TimestampFromDBFormat, analysis.StartDate)
 		if err != nil {
