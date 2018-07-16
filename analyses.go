@@ -139,7 +139,7 @@ func JobKillWarnings(api string, minutes int64) ([]Job, error) {
 	client := graphql.NewClient(api)
 
 	now := time.Now()
-	fmtstring := "2006-01-02 03:04:05.000000-07"
+	fmtstring := "2006-01-02 15:04:05.000000-07"
 	nowtimestamp := now.Format(fmtstring)
 	futuretimestamp := now.Add(time.Duration(minutes) * time.Minute).Format(fmtstring)
 

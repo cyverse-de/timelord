@@ -270,6 +270,7 @@ func main() {
 		)
 
 		for {
+			logger.Info("getting list of warnings to send out")
 			warnings, err = JobKillWarnings(*graphqlBase, *warningInterval)
 			if err != nil {
 				logger.Error(err)
