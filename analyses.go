@@ -263,51 +263,6 @@ func lookupByExternalID(api, externalID string) (*Job, error) {
 	return &data["jobs"][0], nil
 }
 
-// StatusUpdate contains the information contained in a status update for an
-// analysis in the database
-type StatusUpdate struct {
-	ID                     string `json:"id"`          // The analysis ID
-	ExternalID             string `json:"external_id"` // Also referred to as invocation ID
-	Status                 string `json:"status"`
-	SentFrom               string `json:"sent_from"`
-	SentOn                 int64  `json:"sent_on"` // Not actually nullable.
-	Propagated             bool   `json:"propagated"`
-	PropagationAttempts    int64  `json:"propagation_attempts"`
-	LastPropagationAttempt int64  `json:"last_propagation_attempt"`
-	CreatedDate            int64  `json:"created_date"` // Not actually nullable.
-}
-
-// StatusUpdates is a list of StatusUpdates. Mostly exists for marshalling a
-// list into JSON in a format our other services generally expect.
-type StatusUpdates struct {
-	Updates []StatusUpdate `json:"status_updates"`
-}
-
-func lookupStatusUpdates(analysesURL, id string) (*StatusUpdates, error) {
-	apiURL, err := url.Parse(analysesURL)
-	if err != nil {
-		return nil, errors.Wrapf(err, "error parsing URL %s", analysesURL)
-	}
-	apiURL.Path = filepath.Join(apiURL.Path, "id", id, "status-updates")
-
-	resp, err := http.Get(apiURL.String())
-	if err != nil {
-		return nil, errors.Wrapf(err, "error doing GET %s", apiURL.String())
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
-	}
-
-	updates := &StatusUpdates{}
-	if err = json.NewDecoder(resp.Body).Decode(updates); err != nil {
-		return nil, errors.Wrap(err, "error decoding response body of status update lookup")
-	}
-
-	return updates, nil
-}
-
 // EndDatePatch will turn into a JSON body that can be passed to the analyses
 // service to set the planned_end_date for an Analysis/Job.
 type EndDatePatch struct {
