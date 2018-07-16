@@ -101,35 +101,59 @@ func JobsToKill(api string) ([]Job, error) {
 	return data["jobs"], nil
 }
 
+const jobWarningsQuery = `
+query JobWarnings($status: String, $now: timestamp, $future: timestamp){
+  jobs(where: {status: {_eq: $status}, planned_end_date: {_gt: $now}, planned_end_date: {_lte: $future}}) {
+    id
+    app_id
+    user_id
+    status
+    description: job_description
+    name: job_name
+    result_folder: result_folder_path
+    planned_end_date
+    type: jobTypesByjobTypeId {
+      system_id
+    }
+    user: usersByuserId {
+      username
+    }
+  }
+}
+`
+
 // JobKillWarnings returns a list of running jobs that are set to be killed
-// within the next 10 minutes. 'api' should be the base URL for the analyses
-// service.
-func JobKillWarnings(api string, minutes int64) (*JobList, error) {
-	apiURL, err := url.Parse(api)
-	if err != nil {
+// within the number of minutes specified. 'api' should be the base URL for the
+// analyses service.
+func JobKillWarnings(api string, minutes int64) ([]Job, error) {
+	var (
+		err error
+		ok  bool
+	)
+
+	client := graphql.NewClient(api)
+
+	now := time.Now()
+	fmtstring := "2006-01-02 03:04:05.000000-07"
+	nowtimestamp := now.Format(fmtstring)
+	futuretimestamp := now.Add(time.Duration(minutes) * time.Minute).Format(fmtstring)
+
+	req := graphql.NewRequest(jobWarningsQuery)
+	req.Var("status", "Running")
+	req.Var("now", nowtimestamp)
+	req.Var("future", futuretimestamp)
+
+	data := map[string][]Job{}
+
+	if err = client.Run(context.Background(), req, &data); err != nil {
 		return nil, err
 	}
-	apiURL.Path = filepath.Join(apiURL.Path, fmt.Sprintf("/expires-in/%d/running", minutes))
 
-	resp, err := http.Get(apiURL.String())
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	if _, ok = data["jobs"]; !ok {
+		return nil, errors.New("missing jobs field in graphql response")
 	}
 
-	joblist := &JobList{
-		Jobs: []Job{},
-	}
-
-	if err = json.NewDecoder(resp.Body).Decode(joblist); err != nil {
-		return nil, err
-	}
-
-	return joblist, nil
+	return data["jobs"], nil
 }
 
 // KillJob uses the provided API at the base URL to kill a running job. This

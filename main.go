@@ -254,16 +254,16 @@ func main() {
 	go func() {
 		var (
 			jl       []Job
-			warnings *JobList
+			warnings []Job
 			sent     bool
 		)
 
 		for {
-			warnings, err = JobKillWarnings(*analysesBase, *warningInterval)
+			warnings, err = JobKillWarnings(*graphqlBase, *warningInterval)
 			if err != nil {
 				logger.Error(err)
 			} else {
-				for _, w := range warnings.Jobs {
+				for _, w := range warnings {
 					logger.Infof("checking redis set to see if warning has already been sent for analysis %s", w.ID)
 					sent, err = redisclient.SIsMember(*warningSentKey, w.ID).Result()
 					if err != nil {
