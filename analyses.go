@@ -394,7 +394,7 @@ func isInteractive(api, id string) (bool, error) {
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
-func CreateMessageHandler(graphqlBaseURL, analysesBaseURL string) func(amqp.Delivery) {
+func CreateMessageHandler(graphqlBaseURL string) func(amqp.Delivery) {
 	return func(delivery amqp.Delivery) {
 		var err error
 
