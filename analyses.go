@@ -292,7 +292,20 @@ func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
 
 	client := graphql.NewClient(api)
 
-	plannedEndDate := time.Unix(0, millisSinceEpoch*1000000).Format("2006-01-02 03:04:05.000000-07")
+	// Get the time zone offset from UTC in seconds
+	_, offset := time.Now().Local().Zone()
+
+	// Durations are tracked as as nanoseconds stored as an int64, so convert
+	// the seconds into an int64 (which shouldn't lose precision), then
+	// multiply by 1000000000 to convert to Nanoseconds. Next multiply by -1
+	// to flip the sign on the offset, which is needed because we're doing
+	// weird-ish stuff with timestamps in the database. Multiply all of that
+	// by time.Nanosecond to make sure that we're using the right units.
+	addition := time.Duration(int64(offset)*1000000000*-1) * time.Nanosecond
+
+	plannedEndDate := time.Unix(0, millisSinceEpoch*1000000).
+		Add(addition).
+		Format("2006-01-02 03:04:05.000000-07")
 
 	req := graphql.NewRequest(setPlannedEndDateMutation)
 	req.Var("id", id)
@@ -331,34 +344,51 @@ func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
 	return nil
 }
 
-func isInteractive(analysesURL, id string) (bool, error) {
-	apiURL, err := url.Parse(analysesURL)
-	if err != nil {
-		return false, errors.Wrapf(err, "error parsing URL %s", analysesURL)
+const stepTypeQuery = `
+query JobStepType($id: uuid) {
+  steps: job_steps(where: {job_id: {_eq: $id}}) {
+    type: jobTypesByjobTypeId {
+      name
+    }
+  }
+}
+`
+
+func isInteractive(api, id string) (bool, error) {
+	var (
+		ok  bool
+		err error
+	)
+
+	client := graphql.NewClient(api)
+	req := graphql.NewRequest(stepTypeQuery)
+	req.Var("id", id)
+
+	data := map[string][]map[string]map[string]string{}
+
+	if err = client.Run(context.Background(), req, &data); err != nil {
+		return false, err
 	}
-	apiURL.Path = filepath.Join(apiURL.Path, "id", id, "interactive")
 
-	resp, err := http.Get(apiURL.String())
-	if err != nil {
-		return false, errors.Wrapf(err, "error doing GET %s", apiURL.String())
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return false, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	if _, ok = data["steps"]; !ok {
+		return false, errors.New("missing steps field in graphql response")
 	}
 
-	retval := map[string]bool{}
-
-	if err = json.NewDecoder(resp.Body).Decode(&retval); err != nil {
-		return false, errors.Wrap(err, "error decoding body of response")
+	if len(data["steps"]) <= 0 {
+		return false, fmt.Errorf("no steps found for analysis %s", id)
 	}
 
-	if _, ok := retval["interactive"]; !ok {
-		return false, errors.Wrapf(err, "key 'interactive' not found in map '%+v'", retval)
+	step := data["steps"][0]
+
+	if _, ok = step["type"]; !ok {
+		return false, fmt.Errorf("no type field found for analysis %s step", id)
 	}
 
-	return retval["interactive"], nil
+	if _, ok = step["type"]["name"]; !ok {
+		return false, fmt.Errorf("no name field found for analysis %s step type", id)
+	}
+
+	return step["type"]["name"] == "Interactive", nil
 }
 
 // CreateMessageHandler returns a function that can be used by the messaging
@@ -392,7 +422,7 @@ func CreateMessageHandler(graphqlBaseURL, analysesBaseURL string) func(amqp.Deli
 			return
 		}
 
-		analysisIsInteractive, err := isInteractive(analysesBaseURL, analysis.ID)
+		analysisIsInteractive, err := isInteractive(graphqlBaseURL, analysis.ID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up interactive status for analysis %s", analysis.ID))
 			return
