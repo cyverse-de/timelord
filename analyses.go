@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -269,44 +268,65 @@ type EndDatePatch struct {
 	PlannedEndDate int64 `json:"planned_end_date"`
 }
 
-func setPlannedEndDate(analysesURL, id string, millisSinceEpoch int64) error {
-	apiURL, err := url.Parse(analysesURL)
-	if err != nil {
-		return errors.Wrapf(err, "error parsing URL %s", analysesURL)
-	}
-	apiURL.Path = filepath.Join(apiURL.Path, "id", id)
+const setPlannedEndDateMutation = `
+mutation SetPlannedEndDate($id: uuid, $planned_end_date: timestamp) {
+  update_jobs(
+    where: {id: {_eq: $id}},
+    _set: {
+      planned_end_date: $planned_end_date
+    }
+  ) {
+    returning {
+      id
+      planned_end_date
+    }
+  }
+}
+`
 
-	ped := &EndDatePatch{
-		PlannedEndDate: millisSinceEpoch,
+func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
+	var (
+		err error
+		ok  bool
+	)
+
+	client := graphql.NewClient(api)
+
+	plannedEndDate := time.Unix(0, millisSinceEpoch*1000000).Format("2006-01-02 03:04:05.000000-07")
+
+	req := graphql.NewRequest(setPlannedEndDateMutation)
+	req.Var("id", id)
+	req.Var("planned_end_date", plannedEndDate)
+
+	data := map[string]map[string][]map[string]string{}
+
+	if err = client.Run(context.Background(), req, &data); err != nil {
+		return err
 	}
 
-	buf, err := json.Marshal(ped)
-	if err != nil {
-		return errors.Wrap(err, "error marshalling JSON for setting planned end date")
+	if _, ok = data["update_jobs"]; !ok {
+		return errors.New("missing update_jobs field in graphql response")
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, apiURL.String(), bytes.NewReader(buf))
-	if err != nil {
-		return errors.Wrapf(err, "error creating request for PATCH %s %s", apiURL.String(), string(buf))
+	if _, ok = data["update_jobs"]["returning"]; !ok {
+		return errors.New("missing update_jobs.returning field in graphql response")
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return errors.Wrapf(err, "error performing request PATCH %s %s", apiURL.String(), string(buf))
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for PATCH %s was %d", apiURL.String(), resp.StatusCode)
+	if len(data["update_jobs"]["returning"]) <= 0 {
+		return errors.New("nothing returned by the SetPlannedEndDate mutation")
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return errors.Wrapf(err, "error reading response body for request PATCH %s %s", apiURL.String(), string(buf))
+	retval := data["update_jobs"]["returning"][0]
+
+	if _, ok = retval["id"]; !ok {
+		return errors.New("id wasn't returned by the SetPlannedEndDate mutation")
 	}
 
-	logger.Infof("response from PATCH %s was: %s", req.URL, string(body))
+	if _, ok = retval["planned_end_date"]; !ok {
+		return errors.New("planned_end_date was not returned by the SetPlannedEndDate mutation")
+	}
+
+	log.Infof("id: %s, planned_end_date: %s returned by the SetPlannedEndDate mutation", retval["id"], retval["planned_end_date"])
 
 	return nil
 }
@@ -406,7 +426,7 @@ func CreateMessageHandler(graphqlBaseURL, analysesBaseURL string) func(amqp.Deli
 		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
 		// then convert back to milliseconds.
 		endDate := time.Unix(0, sdnano).Add(48*time.Hour).UnixNano() / 1000000
-		if err = setPlannedEndDate(analysesBaseURL, analysis.ID, endDate); err != nil {
+		if err = setPlannedEndDate(graphqlBaseURL, analysis.ID, endDate); err != nil {
 			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}
 	}
