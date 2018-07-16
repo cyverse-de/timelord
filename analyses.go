@@ -22,6 +22,10 @@ import (
 // SystemIDInteractive is the system ID for interactive jobs.
 const SystemIDInteractive = "interactive"
 
+// TimestampFromDBFormat is the format of the timestamps retrieved from the
+// database through the GraphQL server. Shouldn't have timezone info.
+const TimestampFromDBFormat = "2006-01-02T03:04:05"
+
 // JobType contains the system ID for a job.
 type JobType struct {
 	SystemID string `json:"system_id"`
@@ -41,8 +45,8 @@ type Job struct {
 	Description    string  `json:"description"`
 	Name           string  `json:"name"`
 	ResultFolder   string  `json:"result_folder"`
-	StartDate      int64   `json:"start_date"`
-	PlannedEndDate *int64  `json:"planned_end_date"`
+	StartDate      string  `json:"start_date"`
+	PlannedEndDate string  `json:"planned_end_date"`
 	Type           JobType `json:"type"`
 	User           JobUser `json:"user"`
 }
@@ -64,6 +68,7 @@ query Jobs($status: String, $planned_end_date: timestamp){
     name: job_name
     result_folder: result_folder_path
     planned_end_date
+		start_date
     type: jobTypesByjobTypeId {
       system_id
     }
@@ -112,6 +117,7 @@ query JobWarnings($status: String, $now: timestamp, $future: timestamp){
     name: job_name
     result_folder: result_folder_path
     planned_end_date
+		start_date
     type: jobTypesByjobTypeId {
       system_id
     }
@@ -204,36 +210,57 @@ func KillJob(api, jobID, username string) error {
 	return nil
 }
 
-func lookupByExternalID(analysesURL, externalID string) (*Job, error) {
-	apiURL, err := url.Parse(analysesURL)
-	if err != nil {
-		return nil, errors.Wrapf(err, "error parsing URL %s", analysesURL)
+const jobByExternalIDQuery = `
+query Jobs($externalID: String){
+  jobs(where: {jobStepssByjobId: {external_id: {_eq: $externalID}}}) {
+    id
+    app_id
+    user_id
+    status
+    description: job_description
+    name: job_name
+    result_folder: result_folder_path
+    planned_end_date
+		start_date
+    type: jobTypesByjobTypeId {
+      system_id
+    }
+    user: usersByuserId {
+      username
+    }
+    steps: jobStepssByjobId {
+      external_id
+    }
+  }
+}
+`
+
+func lookupByExternalID(api, externalID string) (*Job, error) {
+	var (
+		err error
+		ok  bool
+	)
+
+	client := graphql.NewClient(api)
+
+	req := graphql.NewRequest(jobByExternalIDQuery)
+	req.Var("externalID", externalID)
+
+	data := map[string][]Job{}
+
+	if err = client.Run(context.Background(), req, &data); err != nil {
+		return nil, err
 	}
-	apiURL.Path = filepath.Join(apiURL.Path, "external-id", externalID)
 
-	resp, err := http.Get(apiURL.String())
-	if err != nil {
-		return nil, errors.Wrapf(err, "error doing GET %s", apiURL.String())
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("response status code for GET %s was %d", apiURL.String(), resp.StatusCode)
+	if _, ok = data["jobs"]; !ok {
+		return nil, errors.New("missing jobs field in graphql response")
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "error reading response body")
+	if len(data["jobs"]) <= 0 {
+		return nil, fmt.Errorf("no job found for external ID %s", externalID)
 	}
 
-	log.Infof("response body of external id lookup was: '%s'", string(b))
-
-	j := &Job{}
-	if err = json.Unmarshal(b, j); err != nil {
-		return nil, errors.Wrap(err, "error unmarshaling json in response body")
-	}
-
-	return j, nil
+	return &data["jobs"][0], nil
 }
 
 // StatusUpdate contains the information contained in a status update for an
@@ -362,7 +389,7 @@ func isInteractive(analysesURL, id string) (bool, error) {
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
-func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
+func CreateMessageHandler(graphqlBaseURL, analysesBaseURL string) func(amqp.Delivery) {
 	return func(delivery amqp.Delivery) {
 		var err error
 
@@ -384,7 +411,7 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 		}
 		externalID = update.Job.InvocationID
 
-		analysis, err := lookupByExternalID(analysesBaseURL, externalID)
+		analysis, err := lookupByExternalID(graphqlBaseURL, externalID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up analysis by external ID '%s'", externalID))
 			return
@@ -401,35 +428,60 @@ func CreateMessageHandler(analysesBaseURL string) func(amqp.Delivery) {
 			return
 		}
 
-		// Get the list of status updates from analyses
-		updates, err := lookupStatusUpdates(analysesBaseURL, analysis.ID)
-		if err != nil {
-			log.Error(errors.Wrapf(err, "error looking up status updates for analysis '%s'", analysis.ID))
+		// // Get the list of status updates from analyses
+		// updates, err := lookupStatusUpdates(analysesBaseURL, analysis.ID)
+		// if err != nil {
+		// 	log.Error(errors.Wrapf(err, "error looking up status updates for analysis '%s'", analysis.ID))
+		// 	return
+		// }
+		//
+		// // Count the running status updates
+		// var numRunning int
+		// for _, update := range updates.Updates {
+		// 	if update.Status == "Running" {
+		// 		numRunning = numRunning + 1
+		// 	}
+		// }
+
+		// if numRunning < 1 {
+		// 	log.Infof("number of Running updates for analysis %s is %d, skipping for now", analysis.ID, numRunning)
+		// 	return
+		// }
+
+		if update.State != "Running" {
+			log.Infof("job status update for %s was %s, moving along", analysis.ID, update.State)
 			return
 		}
 
-		// Count the running status updates
-		var numRunning int
-		for _, update := range updates.Updates {
-			if update.Status == "Running" {
-				numRunning = numRunning + 1
-			}
-		}
-
-		if numRunning < 1 {
-			log.Infof("number of Running updates is %d, skipping for now", numRunning)
-			return
-		}
+		log.Infof("job status update for %s was %s", analysis.ID, update.State)
 
 		// Check to see if the planned_end_date is set for the analysis
-		if analysis.PlannedEndDate != nil && *analysis.PlannedEndDate != 0 {
-			// There's nothing to do here, move along
+		if analysis.PlannedEndDate != "" {
+			log.Infof("planned end date for %s is set to %s, nothing to do", analysis.ID, analysis.PlannedEndDate)
+			return // it's already set, so move along.
+		}
+		// plannedEndDate, err := time.Parse(TimestampFromDBFormat, analysis.PlannedEndDate)
+		// if err != nil {
+		// 	log.Error(errors.Wrapf(err, "error parsing planned end date field %s", analysis.PlannedEndDate))
+		// 	return
+		// }
+		// pedmillis := plannedEndDate.UnixNano() / 1000000
+		//
+		// if pedmillis != 0 {
+		// 	// There's nothing to do here, move along
+		// 	return
+		// }
+
+		startDate, err := time.Parse(TimestampFromDBFormat, analysis.StartDate)
+		if err != nil {
+			log.Error(errors.Wrapf(err, "error parsing start date field %s", analysis.StartDate))
 			return
 		}
+		sdnano := startDate.UnixNano()
 
 		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
 		// then convert back to milliseconds.
-		endDate := time.Unix(0, analysis.StartDate*1000000).Add(48*time.Hour).UnixNano() / 1000000
+		endDate := time.Unix(0, sdnano).Add(48*time.Hour).UnixNano() / 1000000
 		if err = setPlannedEndDate(analysesBaseURL, analysis.ID, endDate); err != nil {
 			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}

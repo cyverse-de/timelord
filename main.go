@@ -60,12 +60,17 @@ func sendNotif(j *Job, status, subject, msg string) error {
 	}
 
 	u := ParseID(j.User.Username)
+	sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse %s", j.StartDate)
+	}
+	sdmillis := sd.UnixNano() / 1000000
 
 	p := NewPayload()
 	p.AnalysisName = j.Name
 	p.AnalysisDescription = j.Description
 	p.AnalysisStatus = status
-	p.AnalysisStartDate = strconv.FormatInt(j.StartDate, 10)
+	p.AnalysisStartDate = strconv.FormatInt(sdmillis, 10)
 	p.AnalysisResultsFolder = j.ResultFolder
 	p.Email = user.Email
 	p.User = u
@@ -118,7 +123,10 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 // their job has been killed.
 func SendKillNotification(j *Job) error {
 	subject := fmt.Sprintf(KillSubjectFormat, j.Name)
-	endtime := time.Unix(0, *j.PlannedEndDate*1000000)
+	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
+	}
 	msg := fmt.Sprintf(
 		KillMessageFormat,
 		j.Name,
@@ -133,7 +141,10 @@ func SendKillNotification(j *Job) error {
 // SendWarningNotification sends a notification to the user telling them that
 // their job will be killed in the near future.
 func SendWarningNotification(j *Job) error {
-	endtime := time.Unix(0, *j.PlannedEndDate*1000000)
+	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
+	}
 	endtimeMST := endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006")
 	endtimeUTC := endtime.UTC().Format(time.UnixDate)
 	subject := fmt.Sprintf(WarningSubjectFormat, j.Name, endtimeMST, endtimeUTC)
@@ -214,7 +225,7 @@ func main() {
 		exchangeType,
 		"timelord",
 		messaging.UpdatesKey,
-		CreateMessageHandler(*analysesBase),
+		CreateMessageHandler(*graphqlBase, *analysesBase),
 		0,
 	)
 	logger.Info("done configuring messaging support")
