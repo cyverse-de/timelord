@@ -270,7 +270,7 @@ func generateSubdomain(userID, externalID string) string {
 }
 
 const setSubdomainMutation = `
-mutation SetSubdomain($id: uuid, $subdomain: string) {
+mutation SetSubdomain($id: uuid, $subdomain: String) {
 	update_jobs(
 		where: {id: {_eq: $id}},
 		_set: {
