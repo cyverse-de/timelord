@@ -509,7 +509,7 @@ func CreateMessageHandler(graphqlBaseURL string) func(amqp.Delivery) {
 		if analysis.Subdomain == "" {
 			subdomain := generateSubdomain(update.Job.UserID, update.Job.InvocationID)
 			if err = setSubdomain(graphqlBaseURL, analysis.ID, subdomain); err != nil {
-				log.Error(errors.Wrap(err, "error setting subdomain for analysis '%s' to '%s'"), analysis.ID, subdomain)
+				log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
 			}
 		}
 
