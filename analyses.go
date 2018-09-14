@@ -292,7 +292,7 @@ func setSubdomain(api, id, subdomain string) error {
 	)
 
 	client := graphql.NewClient(api)
-	req := graphql.NewRequest(setPlannedEndDateMutation)
+	req := graphql.NewRequest(setSubdomainMutation)
 	req.Var("id", id)
 	req.Var("subdomain", subdomain)
 
