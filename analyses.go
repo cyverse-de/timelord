@@ -109,7 +109,7 @@ func JobsToKill(api string) ([]Job, error) {
 
 const jobWarningsQuery = `
 query JobWarnings($status: String, $now: timestamp, $future: timestamp){
-  jobs(where: {status: {_eq: $status}, planned_end_date: {_gt: $now}, planned_end_date: {_lte: $future}}) {
+  jobs(where: {status: {_eq: $status}, planned_end_date: {_gt: $now, _lte: $future}}) {
     id
     app_id
     user_id
