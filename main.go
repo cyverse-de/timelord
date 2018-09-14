@@ -269,52 +269,44 @@ func main() {
 		)
 
 		for {
-			logger.Info("getting list of warnings to send out")
 			warnings, err = JobKillWarnings(*graphqlBase, *warningInterval)
 			if err != nil {
 				logger.Error(err)
 			} else {
 				for _, w := range warnings {
-					logger.Infof("checking redis set to see if warning has already been sent for analysis %s", w.ID)
 					sent, err = redisclient.SIsMember(*warningSentKey, w.ID).Result()
 					if err != nil {
-						logger.Error(err)
+						logger.Error(errors.Wrapf(err, "error checking redis set to see if warning has already been sent for analysis %s", w.ID))
 						continue
 					}
 
 					if !sent {
-						logger.Infof("sending warning notification for analysis %s", w.ID)
 						if err = SendWarningNotification(&w); err != nil {
-							logger.Error(err)
+							logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", w.ID))
 						} else {
-							logger.Infof("adding analysis ID %s to redis set to mark warning as having been sent", w.ID)
 							if err = redisclient.SAdd(*warningSentKey, w.ID).Err(); err != nil {
-								logger.Error(err)
+								logger.Error(errors.Wrapf(err, "error adding analysis ID %s to redis set to mark warning as having been sent", w.ID))
 							}
 						}
 					}
 				}
 			}
 
-			logger.Info("getting list of analyses that need to be terminated")
 			jl, err = JobsToKill(*graphqlBase)
 			if err != nil {
-				logger.Error(err)
+				logger.Error(errors.Wrap(err, "error getting list of jobs to kill"))
 				continue
 			}
 
 			for _, j := range jl {
-				logger.Infof("analysis %s is being terminated", j.ID)
 				if err = KillJob(*appsBase, j.ID, j.User.Username); err != nil {
-					logger.Error(err)
+					logger.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 				} else {
-					logger.Infof("sending notification that %s has been terminated", j.ID)
 					if err = SendKillNotification(&j); err != nil {
-						logger.Error(err)
+						logger.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
 					}
-					logger.Infof("removing analysis ID %s from the redis set", j.ID)
 					if _, err = redisclient.SRem(*warningSentKey, j.ID).Result(); err != nil {
-						logger.Error(err)
+						logger.Error(errors.Wrapf(err, "error removing analysis ID '%s' from the redis set", j.ID))
 					}
 				}
 			}
