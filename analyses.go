@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -46,6 +47,7 @@ type Job struct {
 	ResultFolder   string  `json:"result_folder"`
 	StartDate      string  `json:"start_date"`
 	PlannedEndDate string  `json:"planned_end_date"`
+	Subdomain      string  `json:"subdomain"`
 	Type           JobType `json:"type"`
 	User           JobUser `json:"user"`
 }
@@ -220,6 +222,7 @@ query Jobs($externalID: String){
     name: job_name
     result_folder: result_folder_path
     planned_end_date
+		subdomain
 		start_date
     type: jobTypesByjobTypeId {
       system_id
@@ -262,10 +265,66 @@ func lookupByExternalID(api, externalID string) (*Job, error) {
 	return &data["jobs"][0], nil
 }
 
-// EndDatePatch will turn into a JSON body that can be passed to the analyses
-// service to set the planned_end_date for an Analysis/Job.
-type EndDatePatch struct {
-	PlannedEndDate int64 `json:"planned_end_date"`
+func generateSubdomain(userID, externalID string) string {
+	return fmt.Sprintf("a%x", sha256.Sum256([]byte(fmt.Sprintf("%s%s", userID, externalID))))[0:9]
+}
+
+const setSubdomainMutation = `
+mutation SetSubdomain($id: uuid, $subdomain: string) {
+	update_jobs(
+		where: {id: {_eq: $id}},
+		_set: {
+			subdomain: $subdomain
+		}
+	) {
+		returning {
+			id
+			subdomain
+		}
+	}
+}
+`
+
+func setSubdomain(api, id, subdomain string) error {
+	var (
+		err error
+		ok  bool
+	)
+
+	client := graphql.NewClient(api)
+	req := graphql.NewRequest(setPlannedEndDateMutation)
+	req.Var("id", id)
+	req.Var("subdomain", subdomain)
+
+	data := map[string]map[string][]map[string]string{}
+
+	if err = client.Run(context.Background(), req, &data); err != nil {
+		return err
+	}
+
+	if _, ok = data["update_jobs"]; !ok {
+		return errors.New("missing update_jobs field in graphql response")
+	}
+
+	if _, ok = data["update_jobs"]["returning"]; !ok {
+		return errors.New("missing update_jobs.returning field in graphql response")
+	}
+
+	if len(data["update_jobs"]["returning"]) <= 0 {
+		return errors.New("nothing returned by the SetPlannedEndDate mutation")
+	}
+
+	retval := data["update_jobs"]["returning"][0]
+
+	if _, ok = retval["id"]; !ok {
+		return errors.New("id wasn't returned by the SetPlannedEndDate mutation")
+	}
+
+	if _, ok = retval["subdomain"]; !ok {
+		return errors.New("subdomain was not returned by the SetSubdomain mutation")
+	}
+
+	return nil
 }
 
 const setPlannedEndDateMutation = `
@@ -283,6 +342,12 @@ mutation SetPlannedEndDate($id: uuid, $planned_end_date: timestamp) {
   }
 }
 `
+
+// EndDatePatch will turn into a JSON body that can be passed to the analyses
+// service to set the planned_end_date for an Analysis/Job.
+type EndDatePatch struct {
+	PlannedEndDate int64 `json:"planned_end_date"`
+}
 
 func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
 	var (
@@ -439,6 +504,14 @@ func CreateMessageHandler(graphqlBaseURL string) func(amqp.Delivery) {
 		}
 
 		log.Infof("job status update for %s was %s", analysis.ID, update.State)
+
+		// Set the subdomain
+		if analysis.Subdomain == "" {
+			subdomain := generateSubdomain(update.Job.UserID, update.Job.InvocationID)
+			if err = setSubdomain(graphqlBaseURL, analysis.ID, subdomain); err != nil {
+				log.Error(errors.Wrap(err, "error setting subdomain for analysis '%s' to '%s'"), analysis.ID, subdomain)
+			}
+		}
 
 		// Check to see if the planned_end_date is set for the analysis
 		if analysis.PlannedEndDate != "" {
