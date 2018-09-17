@@ -19,9 +19,6 @@ import (
 	"gopkg.in/cyverse-de/messaging.v4"
 )
 
-// SystemIDInteractive is the system ID for interactive jobs.
-const SystemIDInteractive = "interactive"
-
 // TimestampFromDBFormat is the format of the timestamps retrieved from the
 // database through the GraphQL server. Shouldn't have timezone info.
 const TimestampFromDBFormat = "2006-01-02T03:04:05"
@@ -50,12 +47,6 @@ type Job struct {
 	Subdomain      string  `json:"subdomain"`
 	Type           JobType `json:"type"`
 	User           JobUser `json:"user"`
-}
-
-// JobList is a list of Jobs, serializable in JSON the way that we typically
-// serialize lists.
-type JobList struct {
-	Jobs []Job `json:"jobs"`
 }
 
 const jobsToKillQuery = `
@@ -342,12 +333,6 @@ mutation SetPlannedEndDate($id: uuid, $planned_end_date: timestamp) {
   }
 }
 `
-
-// EndDatePatch will turn into a JSON body that can be passed to the analyses
-// service to set the planned_end_date for an Analysis/Job.
-type EndDatePatch struct {
-	PlannedEndDate int64 `json:"planned_end_date"`
-}
 
 func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
 	var (
