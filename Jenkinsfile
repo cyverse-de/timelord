@@ -1,4 +1,5 @@
 #!groovy
+milestone 0
 node('docker') {
     slackJobDescription = "job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})"
     try {
@@ -14,15 +15,17 @@ node('docker') {
         echo descriptive_version
 
         dockerRepo = "test-${env.BUILD_TAG}"
+        dockerPushRepo = "${service.dockerUser}/${service.repo}:${env.BRANCH_NAME}"
 
-        sh "docker build --rm --build-arg git_commit=${git_commit} --build-arg descriptive_version=${descriptive_version} -t ${dockerRepo} ."
+        milestone 50
+        sh "docker build --pull --cache-from=${dockerPushRepo} --rm --build-arg git_commit=${git_commit} --build-arg descriptive_version=${descriptive_version} -t ${dockerRepo} ."
+        milestone 51
 
         image_sha = sh(returnStdout: true, script: "docker inspect -f '{{ .Config.Image }}' ${dockerRepo}").trim()
         echo image_sha
 
         writeFile(file: "${dockerRepo}.docker-image-sha", text: "${image_sha}")
         fingerprint "${dockerRepo}.docker-image-sha"
-
 
         dockerTestRunner = "test-${env.BUILD_TAG}"
         dockerTestCleanup = "test-cleanup-${env.BUILD_TAG}"
@@ -37,10 +40,8 @@ node('docker') {
                 sh "docker run --rm --name ${dockerTestCleanup} -v \$(pwd):/build -w /build alpine rm -r test-results.xml"
             }
 
-
             milestone 100
             stage "Docker Push"
-            dockerPushRepo = "${service.dockerUser}/${service.repo}:${env.BRANCH_NAME}"
             lock("docker-push-${dockerPushRepo}") {
               milestone 101
               sh "docker tag ${dockerRepo} ${dockerPushRepo}"
