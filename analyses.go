@@ -21,7 +21,7 @@ import (
 
 // TimestampFromDBFormat is the format of the timestamps retrieved from the
 // database through the GraphQL server. Shouldn't have timezone info.
-const TimestampFromDBFormat = "2006-01-02T03:04:05"
+const TimestampFromDBFormat = "2006-01-02T15:04:05"
 
 // JobType contains the system ID for a job.
 type JobType struct {
@@ -83,7 +83,7 @@ func JobsToKill(api string) ([]Job, error) {
 
 	req := graphql.NewRequest(jobsToKillQuery)
 	req.Var("status", "Running")
-	req.Var("planned_end_date", time.Now().Format("2006-01-02 03:04:05.000000-07"))
+	req.Var("planned_end_date", time.Now().Format("2006-01-02 15:04:05.000000-07"))
 
 	data := map[string][]Job{}
 
@@ -355,7 +355,7 @@ func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
 
 	plannedEndDate := time.Unix(0, millisSinceEpoch*1000000).
 		Add(addition).
-		Format("2006-01-02 03:04:05.000000-07")
+		Format("2006-01-02 15:04:05.000000-07")
 
 	req := graphql.NewRequest(setPlannedEndDateMutation)
 	req.Var("id", id)
