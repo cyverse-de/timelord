@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
+	pq "github.com/lib/pq"
 	"github.com/machinebox/graphql"
 	"github.com/pkg/errors"
 	"github.com/streadway/amqp"
@@ -47,111 +49,188 @@ type Job struct {
 	Subdomain      string  `json:"subdomain"`
 	Type           JobType `json:"type"`
 	User           JobUser `json:"user"`
+	ExternalID     string  `json:"external_id"`
 }
 
 const jobsToKillQuery = `
-query Jobs($status: String, $planned_end_date: timestamp){
-  jobs(where: {status: {_eq: $status}, planned_end_date: {_lte: $planned_end_date}}) {
-    id
-    app_id
-    user_id
-    status
-    description: job_description
-    name: job_name
-    result_folder: result_folder_path
-    planned_end_date
-		start_date
-    type: jobTypesByjobTypeId {
-      system_id
-    }
-    user: usersByuserId {
-      username
-    }
-  }
-}
-`
+select jobs.id,
+       jobs.app_id,
+       jobs.user_id,
+       jobs.status,
+       jobs.job_description,
+       jobs.job_name,
+       jobs.result_folder_path,
+       jobs.planned_end_date,
+       jobs.start_date,
+       job_types.system_id,
+       users.username
+  from jobs
+  join job_types on jobs.job_type_id = job_types.id
+  join users on jobs.user_id = users.id
+ where jobs.status = $1
+   and jobs.planned_end_date <= $2`
+
+// const jobsToKillQuery = `
+// query Jobs($status: String, $planned_end_date: timestamp){
+//   jobs(where: {status: {_eq: $status}, planned_end_date: {_lte: $planned_end_date}}) {
+//     id
+//     app_id
+//     user_id
+//     status
+//     description: job_description
+//     name: job_name
+//     result_folder: result_folder_path
+//     planned_end_date
+// 		start_date
+//     type: jobTypesByjobTypeId {
+//       system_id
+//     }
+//     user: usersByuserId {
+//       username
+//     }
+//   }
+// }
+// `
 
 // JobsToKill returns a list of running jobs that are past their expiration date
 // and can be killed off. 'api' should be the base URL for the analyses service.
-func JobsToKill(api string) ([]Job, error) {
+func JobsToKill(db *sql.DB) ([]Job, error) {
 	var (
-		err error
-		ok  bool
+		err  error
+		ok   bool
+		rows *sql.Rows
 	)
 
-	client := graphql.NewClient(api)
+	if rows, err = db.Query(
+		jobsToKillQuery,
+		"Running",
+		time.Now().Format("2006-01-02 15:04:05.000000-07"),
+	); err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-	req := graphql.NewRequest(jobsToKillQuery)
-	req.Var("status", "Running")
-	req.Var("planned_end_date", time.Now().Format("2006-01-02 15:04:05.000000-07"))
+	jobs := []Job{}
 
-	data := map[string][]Job{}
+	for rows.Next() {
+		var (
+			job            Job
+			startDate      pq.NullTime
+			plannedEndDate pq.NullTime
+		)
+		if err = rows.Scan(
+			&job.ID,
+			&job.AppID,
+			&job.UserID,
+			&job.Status,
+			&job.Description,
+			&job.Name,
+			&job.ResultFolder,
+			&plannedEndDate,
+			&startDate,
+			&job.Type,
+			&job.User,
+		); err != nil {
+			return nil, err
+		}
+		if plannedEndDate.Valid {
+			job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
+		}
+		if startDate.Valid {
+			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
+		}
+		jobs = append(jobs, job)
+	}
 
-	if err = client.Run(context.Background(), req, &data); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 
-	if _, ok = data["jobs"]; !ok {
-		return nil, errors.New("missing jobs field in graphql response")
-	}
-
-	return data["jobs"], nil
+	return jobs, nil
 }
 
 const jobWarningsQuery = `
-query JobWarnings($status: String, $now: timestamp, $future: timestamp){
-  jobs(where: {status: {_eq: $status}, planned_end_date: {_gt: $now, _lte: $future}}) {
-    id
-    app_id
-    user_id
-    status
-    description: job_description
-    name: job_name
-    result_folder: result_folder_path
-    planned_end_date
-		start_date
-    type: jobTypesByjobTypeId {
-      system_id
-    }
-    user: usersByuserId {
-      username
-    }
-  }
-}
+select jobs.id,
+       jobs.app_id,
+       jobs.user_id,
+       jobs.status,
+       jobs.job_description,
+       jobs.job_name,
+       jobs.result_folder_path,
+       jobs.planned_end_date,
+       jobs.start_date,
+       job_types.system_id,
+       users.username
+  from jobs
+  join job_types on jobs.job_type_id = job_types.id
+  join users on jobs.user_id = users.id
+ where jobs.status = $1
+   and jobs.planned_end_date > $2
+   and jobs.planned_end_date <= $3
 `
 
 // JobKillWarnings returns a list of running jobs that are set to be killed
 // within the number of minutes specified. 'api' should be the base URL for the
 // analyses service.
-func JobKillWarnings(api string, minutes int64) ([]Job, error) {
+func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
 	var (
-		err error
-		ok  bool
+		err  error
+		ok   bool
+		rows *sql.Rows
 	)
 
-	client := graphql.NewClient(api)
-
 	now := time.Now()
-	fmtstring := "2006-01-02 15:04:05.000000-07"
-	nowtimestamp := now.Format(fmtstring)
-	futuretimestamp := now.Add(time.Duration(minutes) * time.Minute).Format(fmtstring)
+	// fmtstring := "2006-01-02 15:04:05.000000-07"
+	// nowtimestamp := now.Format(fmtstring)
+	// futuretimestamp := now.Add(time.Duration(minutes) * time.Minute).Format(fmtstring)
 
-	req := graphql.NewRequest(jobWarningsQuery)
-	req.Var("status", "Running")
-	req.Var("now", nowtimestamp)
-	req.Var("future", futuretimestamp)
+	if rows, err = db.Query(
+		jobWarningsQuery,
+		"Running",
+		now,
+		now.Add(time.Duration(minutes)*time.Minute),
+	); err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-	data := map[string][]Job{}
+	jobs := []Job{}
 
-	if err = client.Run(context.Background(), req, &data); err != nil {
+	for rows.Next() {
+		var (
+			job            Job
+			startDate      pq.NullTime
+			plannedEndDate pq.NullTime
+		)
+		if err = rows.Scan(
+			&job.ID,
+			&job.AppID,
+			&job.UserID,
+			&job.Status,
+			&job.Description,
+			&job.Name,
+			&job.ResultFolder,
+			&plannedEndDate,
+			&startDate,
+			&job.Type,
+			&job.User,
+		); err != nil {
+			return nil, err
+		}
+		if plannedEndDate.Valid {
+			job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
+		}
+		if startDate.Valid {
+			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
+		}
+		jobs = append(jobs, job)
+	}
+
+	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 
-	if _, ok = data["jobs"]; !ok {
-		return nil, errors.New("missing jobs field in graphql response")
-	}
-
-	return data["jobs"], nil
+	return jobs, nil
 }
 
 // KillJob uses the provided API at the base URL to kill a running job. This
@@ -203,78 +282,107 @@ func KillJob(api, jobID, username string) error {
 }
 
 const jobByExternalIDQuery = `
-query Jobs($externalID: String){
-  jobs(where: {jobStepssByjobId: {external_id: {_eq: $externalID}}}) {
-    id
-    app_id
-    user_id
-    status
-    description: job_description
-    name: job_name
-    result_folder: result_folder_path
-    planned_end_date
-		subdomain
-		start_date
-    type: jobTypesByjobTypeId {
-      system_id
-    }
-    user: usersByuserId {
-      username
-    }
-    steps: jobStepssByjobId {
-      external_id
-    }
-  }
-}
-`
+select jobs.id
+       jobs.app_id
+       jobs.user_id
+       jobs.status
+       jobs.job_description
+       jobs.job_name
+       jobs.result_folder_path
+       jobs.planned_end_date
+       jobs.subdomain
+       jobs.start_date
+       job_types.system_id
+       users.username
+       job_steps.external_id
+  from jobs
+  join job_types on jobs.job_type_id = job_types.id
+  join users on jobs.user_id = users.id
+  join job_steps on jobs.id = job_steps.job_id
+ where job_steps.external_id = $1`
 
-func lookupByExternalID(api, externalID string) (*Job, error) {
+// const jobByExternalIDQuery = `
+// query Jobs($externalID: String){
+//   jobs(where: {jobStepssByjobId: {external_id: {_eq: $externalID}}}) {
+//     id
+//     app_id
+//     user_id
+//     status
+//     description: job_description
+//     name: job_name
+//     result_folder: result_folder_path
+//     planned_end_date
+// 		subdomain
+// 		start_date
+//     type: jobTypesByjobTypeId {
+//       system_id
+//     }
+//     user: usersByuserId {
+//       username
+//     }
+//     steps: jobStepssByjobId {
+//       external_id
+//     }
+//   }
+// }
+// `
+
+func lookupByExternalID(db *sql.DB, externalID string) (*Job, error) {
 	var (
-		err error
-		ok  bool
+		err            error
+		ok             bool
+		row            *sql.Row
+		job            *Job
+		startDate      pq.NullTime
+		plannedEndDate pq.NullTime
 	)
 
-	client := graphql.NewClient(api)
-
-	req := graphql.NewRequest(jobByExternalIDQuery)
-	req.Var("externalID", externalID)
-
-	data := map[string][]Job{}
-
-	if err = client.Run(context.Background(), req, &data); err != nil {
+	if err = db.QueryRow(jobByExternalIDQuery, externalID).Scan(
+		&job.ID,
+		&job.AppID,
+		&job.UserID,
+		&job.Status,
+		&job.Description,
+		&job.Name,
+		&job.ResultFolder,
+		&plannedEndDate,
+		&startDate,
+		&job.Type,
+		&job.User,
+	); err != nil {
 		return nil, err
 	}
-
-	if _, ok = data["jobs"]; !ok {
-		return nil, errors.New("missing jobs field in graphql response")
+	if plannedEndDate.Valid {
+		job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
+	}
+	if startDate.Valid {
+		job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
 	}
 
-	if len(data["jobs"]) <= 0 {
-		return nil, fmt.Errorf("no job found for external ID %s", externalID)
-	}
-
-	return &data["jobs"][0], nil
+	return job, nil
 }
 
 func generateSubdomain(userID, externalID string) string {
 	return fmt.Sprintf("a%x", sha256.Sum256([]byte(fmt.Sprintf("%s%s", userID, externalID))))[0:9]
 }
 
-const setSubdomainMutation = `
-mutation SetSubdomain($id: uuid, $subdomain: String) {
-	update_jobs(
-		where: {id: {_eq: $id}},
-		_set: {
-			subdomain: $subdomain
-		}
-	) {
-		returning {
-			id
-			subdomain
-		}
-	}
-}
-`
+const setSubdomainMutation = `update only jobs set subdomain = $1 where id = $2`
+
+// const setSubdomainMutation = `
+// mutation SetSubdomain($id: uuid, $subdomain: String) {
+// 	update_jobs(
+// 		where: {id: {_eq: $id}},
+// 		_set: {
+// 			subdomain: $subdomain
+// 		}
+// 	) {
+// 		returning {
+// 			id
+// 			subdomain
+// 		}
+// 	}
+// }
+// `
 
 func setSubdomain(api, id, subdomain string) error {
 	var (
