@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	pq "github.com/lib/pq"
-	"github.com/machinebox/graphql"
 	"github.com/pkg/errors"
 	"github.com/streadway/amqp"
 	"gopkg.in/cyverse-de/messaging.v4"
@@ -70,34 +68,11 @@ select jobs.id,
  where jobs.status = $1
    and jobs.planned_end_date <= $2`
 
-// const jobsToKillQuery = `
-// query Jobs($status: String, $planned_end_date: timestamp){
-//   jobs(where: {status: {_eq: $status}, planned_end_date: {_lte: $planned_end_date}}) {
-//     id
-//     app_id
-//     user_id
-//     status
-//     description: job_description
-//     name: job_name
-//     result_folder: result_folder_path
-//     planned_end_date
-// 		start_date
-//     type: jobTypesByjobTypeId {
-//       system_id
-//     }
-//     user: usersByuserId {
-//       username
-//     }
-//   }
-// }
-// `
-
 // JobsToKill returns a list of running jobs that are past their expiration date
 // and can be killed off. 'api' should be the base URL for the analyses service.
 func JobsToKill(db *sql.DB) ([]Job, error) {
 	var (
 		err  error
-		ok   bool
 		rows *sql.Rows
 	)
 
@@ -175,7 +150,6 @@ select jobs.id,
 func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
 	var (
 		err  error
-		ok   bool
 		rows *sql.Rows
 	)
 
@@ -301,37 +275,9 @@ select jobs.id
   join job_steps on jobs.id = job_steps.job_id
  where job_steps.external_id = $1`
 
-// const jobByExternalIDQuery = `
-// query Jobs($externalID: String){
-//   jobs(where: {jobStepssByjobId: {external_id: {_eq: $externalID}}}) {
-//     id
-//     app_id
-//     user_id
-//     status
-//     description: job_description
-//     name: job_name
-//     result_folder: result_folder_path
-//     planned_end_date
-// 		subdomain
-// 		start_date
-//     type: jobTypesByjobTypeId {
-//       system_id
-//     }
-//     user: usersByuserId {
-//       username
-//     }
-//     steps: jobStepssByjobId {
-//       external_id
-//     }
-//   }
-// }
-// `
-
 func lookupByExternalID(db *sql.DB, externalID string) (*Job, error) {
 	var (
 		err            error
-		ok             bool
-		row            *sql.Row
 		job            *Job
 		startDate      pq.NullTime
 		plannedEndDate pq.NullTime
@@ -368,87 +314,20 @@ func generateSubdomain(userID, externalID string) string {
 
 const setSubdomainMutation = `update only jobs set subdomain = $1 where id = $2`
 
-// const setSubdomainMutation = `
-// mutation SetSubdomain($id: uuid, $subdomain: String) {
-// 	update_jobs(
-// 		where: {id: {_eq: $id}},
-// 		_set: {
-// 			subdomain: $subdomain
-// 		}
-// 	) {
-// 		returning {
-// 			id
-// 			subdomain
-// 		}
-// 	}
-// }
-// `
+func setSubdomain(db *sql.DB, id, subdomain string) error {
+	var err error
 
-func setSubdomain(api, id, subdomain string) error {
-	var (
-		err error
-		ok  bool
-	)
-
-	client := graphql.NewClient(api)
-	req := graphql.NewRequest(setSubdomainMutation)
-	req.Var("id", id)
-	req.Var("subdomain", subdomain)
-
-	data := map[string]map[string][]map[string]string{}
-
-	if err = client.Run(context.Background(), req, &data); err != nil {
-		return err
+	if _, err = db.Exec(setSubdomainMutation, subdomain, id); err != nil {
+		return errors.Wrapf(err, "error setting subdomain for job %s to %s", id, subdomain)
 	}
 
-	if _, ok = data["update_jobs"]; !ok {
-		return errors.New("missing update_jobs field in graphql response")
-	}
-
-	if _, ok = data["update_jobs"]["returning"]; !ok {
-		return errors.New("missing update_jobs.returning field in graphql response")
-	}
-
-	if len(data["update_jobs"]["returning"]) <= 0 {
-		return errors.New("nothing returned by the SetPlannedEndDate mutation")
-	}
-
-	retval := data["update_jobs"]["returning"][0]
-
-	if _, ok = retval["id"]; !ok {
-		return errors.New("id wasn't returned by the SetPlannedEndDate mutation")
-	}
-
-	if _, ok = retval["subdomain"]; !ok {
-		return errors.New("subdomain was not returned by the SetSubdomain mutation")
-	}
-
-	return nil
+	return err
 }
 
-const setPlannedEndDateMutation = `
-mutation SetPlannedEndDate($id: uuid, $planned_end_date: timestamp) {
-  update_jobs(
-    where: {id: {_eq: $id}},
-    _set: {
-      planned_end_date: $planned_end_date
-    }
-  ) {
-    returning {
-      id
-      planned_end_date
-    }
-  }
-}
-`
+const setPlannedEndDateMutation = `update only jobs set planned_end_date = $1 where id = $2`
 
-func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
-	var (
-		err error
-		ok  bool
-	)
-
-	client := graphql.NewClient(api)
+func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
+	var err error
 
 	// Get the time zone offset from UTC in seconds
 	_, offset := time.Now().Local().Zone()
@@ -465,94 +344,36 @@ func setPlannedEndDate(api, id string, millisSinceEpoch int64) error {
 		Add(addition).
 		Format("2006-01-02 15:04:05.000000-07")
 
-	req := graphql.NewRequest(setPlannedEndDateMutation)
-	req.Var("id", id)
-	req.Var("planned_end_date", plannedEndDate)
-
-	data := map[string]map[string][]map[string]string{}
-
-	if err = client.Run(context.Background(), req, &data); err != nil {
-		return err
+	if _, err = db.Exec(setPlannedEndDateMutation, plannedEndDate, id); err != nil {
+		return errors.Wrapf(err, "error setting planned_end_date to %s for job %s", plannedEndDate, id)
 	}
 
-	if _, ok = data["update_jobs"]; !ok {
-		return errors.New("missing update_jobs field in graphql response")
-	}
-
-	if _, ok = data["update_jobs"]["returning"]; !ok {
-		return errors.New("missing update_jobs.returning field in graphql response")
-	}
-
-	if len(data["update_jobs"]["returning"]) <= 0 {
-		return errors.New("nothing returned by the SetPlannedEndDate mutation")
-	}
-
-	retval := data["update_jobs"]["returning"][0]
-
-	if _, ok = retval["id"]; !ok {
-		return errors.New("id wasn't returned by the SetPlannedEndDate mutation")
-	}
-
-	if _, ok = retval["planned_end_date"]; !ok {
-		return errors.New("planned_end_date was not returned by the SetPlannedEndDate mutation")
-	}
-
-	log.Infof("id: %s, planned_end_date: %s returned by the SetPlannedEndDate mutation", retval["id"], retval["planned_end_date"])
-
-	return nil
+	return err
 }
 
 const stepTypeQuery = `
-query JobStepType($id: uuid) {
-  steps: job_steps(where: {job_id: {_eq: $id}}) {
-    type: jobTypesByjobTypeId {
-      name
-    }
-  }
-}
-`
+select job_types.name
+  from job_types
+  join jobs on job_types.job_id = jobs.id
+ where jobs.id = $1
+ limit 1`
 
-func isInteractive(api, id string) (bool, error) {
+func isInteractive(db *sql.DB, id string) (bool, error) {
 	var (
-		ok  bool
-		err error
+		err     error
+		jobType string
 	)
 
-	client := graphql.NewClient(api)
-	req := graphql.NewRequest(stepTypeQuery)
-	req.Var("id", id)
-
-	data := map[string][]map[string]map[string]string{}
-
-	if err = client.Run(context.Background(), req, &data); err != nil {
-		return false, err
+	if err = db.QueryRow(stepTypeQuery, id).Scan(&jobType); err != nil {
+		return false, errors.Wrapf(err, "error looking up step type for job %s", id)
 	}
-
-	if _, ok = data["steps"]; !ok {
-		return false, errors.New("missing steps field in graphql response")
-	}
-
-	if len(data["steps"]) <= 0 {
-		return false, fmt.Errorf("no steps found for analysis %s", id)
-	}
-
-	step := data["steps"][0]
-
-	if _, ok = step["type"]; !ok {
-		return false, fmt.Errorf("no type field found for analysis %s step", id)
-	}
-
-	if _, ok = step["type"]["name"]; !ok {
-		return false, fmt.Errorf("no name field found for analysis %s step type", id)
-	}
-
-	return step["type"]["name"] == "Interactive", nil
+	return jobType == "Interactive", err
 }
 
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
-func CreateMessageHandler(graphqlBaseURL string) func(amqp.Delivery) {
+func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 	return func(delivery amqp.Delivery) {
 		var err error
 
@@ -574,13 +395,13 @@ func CreateMessageHandler(graphqlBaseURL string) func(amqp.Delivery) {
 		}
 		externalID = update.Job.InvocationID
 
-		analysis, err := lookupByExternalID(graphqlBaseURL, externalID)
+		analysis, err := lookupByExternalID(db, externalID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up analysis by external ID '%s'", externalID))
 			return
 		}
 
-		analysisIsInteractive, err := isInteractive(graphqlBaseURL, analysis.ID)
+		analysisIsInteractive, err := isInteractive(db, analysis.ID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up interactive status for analysis %s", analysis.ID))
 			return
@@ -601,7 +422,7 @@ func CreateMessageHandler(graphqlBaseURL string) func(amqp.Delivery) {
 		// Set the subdomain
 		if analysis.Subdomain == "" {
 			subdomain := generateSubdomain(update.Job.UserID, update.Job.InvocationID)
-			if err = setSubdomain(graphqlBaseURL, analysis.ID, subdomain); err != nil {
+			if err = setSubdomain(db, analysis.ID, subdomain); err != nil {
 				log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
 			}
 		}
@@ -622,7 +443,7 @@ func CreateMessageHandler(graphqlBaseURL string) func(amqp.Delivery) {
 		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
 		// then convert back to milliseconds.
 		endDate := time.Unix(0, sdnano).Add(48*time.Hour).UnixNano() / 1000000
-		if err = setPlannedEndDate(graphqlBaseURL, analysis.ID, endDate); err != nil {
+		if err = setPlannedEndDate(db, analysis.ID, endDate); err != nil {
 			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}
 	}

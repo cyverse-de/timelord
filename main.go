@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -214,6 +215,15 @@ func main() {
 		log.Fatal("db.uri must be set in the config file")
 	}
 
+	db, err := sql.Open("postgres", dbURI)
+	if err != nil {
+		log.Fatal(errors.Wrapf(err, "error connecting to database %s", dbURI))
+	}
+
+	if err = db.Ping(); err != nil {
+		log.Fatal(errors.Wrapf(err, "error pinging database %s", dbURI))
+	}
+
 	logger.Info("configuring messaging support...")
 	amqpclient, err := messaging.NewClient(amqpURI, false)
 	if err != nil {
@@ -228,7 +238,7 @@ func main() {
 		exchangeType,
 		"timelord",
 		messaging.UpdatesKey,
-		CreateMessageHandler(*graphqlBase),
+		CreateMessageHandler(db),
 		0,
 	)
 	logger.Info("done configuring messaging support")
@@ -273,7 +283,7 @@ func main() {
 		)
 
 		for {
-			warnings, err = JobKillWarnings(*graphqlBase, *warningInterval)
+			warnings, err = JobKillWarnings(db, *warningInterval)
 			if err != nil {
 				logger.Error(err)
 			} else {
@@ -296,7 +306,7 @@ func main() {
 				}
 			}
 
-			jl, err = JobsToKill(*graphqlBase)
+			jl, err = JobsToKill(db)
 			if err != nil {
 				logger.Error(errors.Wrap(err, "error getting list of jobs to kill"))
 				continue
