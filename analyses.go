@@ -366,22 +366,43 @@ func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
 }
 
 const stepTypeQuery = `
-select job_types.name
-  from job_types
-  join jobs on job_types.id = jobs.job_type_id
- where jobs.id = $1
- limit 1`
+SELECT t.name
+  FROM jobs j
+  JOIN job_steps s
+    ON j.id = s.job_id
+  JOIN job_types t
+    ON s.job_type_id = t.id
+ WHERE j.id = $1`
 
 func isInteractive(db *sql.DB, id string) (bool, error) {
 	var (
-		err     error
-		jobType string
+		err      error
+		rows     *sql.Rows
+		jobTypes []string
 	)
 
-	if err = db.QueryRow(stepTypeQuery, id).Scan(&jobType); err != nil {
-		return false, errors.Wrapf(err, "error looking up step type for job %s", id)
+	if rows, err = db.Query(stepTypeQuery, id); err != nil {
+		return false, err
 	}
-	return jobType == "Interactive", err
+	defer rows.Close()
+
+	for rows.Next() {
+		var t string
+		err = rows.Scan(&t)
+		if err != nil {
+			return false, err
+		}
+		jobTypes = append(jobTypes, t)
+	}
+
+	found := false
+	for _, j := range jobTypes {
+		if j == "Interactive" {
+			found = true
+		}
+	}
+
+	return found, nil
 }
 
 // CreateMessageHandler returns a function that can be used by the messaging
