@@ -55,12 +55,12 @@ func sendNotif(j *Job, status, subject, msg string) error {
 	}
 
 	// We need to get the user's email address from the iplant-groups service.
-	user := NewUser(ParseID(j.User.Username))
+	user := NewUser(ParseID(j.User))
 	if err = user.Get(); err != nil {
 		return errors.Wrap(err, "failed to get user info")
 	}
 
-	u := ParseID(j.User.Username)
+	u := ParseID(j.User)
 	sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse %s", j.StartDate)
@@ -313,7 +313,7 @@ func main() {
 			}
 
 			for _, j := range jl {
-				if err = KillJob(*appsBase, j.ID, j.User.Username); err != nil {
+				if err = KillJob(*appsBase, j.ID, j.User); err != nil {
 					logger.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 				} else {
 					if err = SendKillNotification(&j); err != nil {

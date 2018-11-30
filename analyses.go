@@ -35,19 +35,19 @@ type JobUser struct {
 
 // Job contains the information about an analysis that we're interested in.
 type Job struct {
-	ID             string  `json:"id"`
-	AppID          string  `json:"app_id"`
-	UserID         string  `json:"user_id"`
-	Status         string  `json:"status"`
-	Description    string  `json:"description"`
-	Name           string  `json:"name"`
-	ResultFolder   string  `json:"result_folder"`
-	StartDate      string  `json:"start_date"`
-	PlannedEndDate string  `json:"planned_end_date"`
-	Subdomain      string  `json:"subdomain"`
-	Type           JobType `json:"type"`
-	User           JobUser `json:"user"`
-	ExternalID     string  `json:"external_id"`
+	ID             string `json:"id"`
+	AppID          string `json:"app_id"`
+	UserID         string `json:"user_id"`
+	Status         string `json:"status"`
+	Description    string `json:"description"`
+	Name           string `json:"name"`
+	ResultFolder   string `json:"result_folder"`
+	StartDate      string `json:"start_date"`
+	PlannedEndDate string `json:"planned_end_date"`
+	Subdomain      string `json:"subdomain"`
+	Type           string `json:"type"`
+	User           string `json:"user"`
+	ExternalID     string `json:"external_id"`
 }
 
 const jobsToKillQuery = `
@@ -93,6 +93,9 @@ func JobsToKill(db *sql.DB) ([]Job, error) {
 			startDate      pq.NullTime
 			plannedEndDate pq.NullTime
 		)
+
+		job = Job{}
+
 		if err = rows.Scan(
 			&job.ID,
 			&job.AppID,
@@ -176,6 +179,9 @@ func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
 			startDate      pq.NullTime
 			plannedEndDate pq.NullTime
 		)
+
+		job = Job{}
+
 		if err = rows.Scan(
 			&job.ID,
 			&job.AppID,
@@ -256,18 +262,18 @@ func KillJob(api, jobID, username string) error {
 }
 
 const jobByExternalIDQuery = `
-select jobs.id
-       jobs.app_id
-       jobs.user_id
-       jobs.status
-       jobs.job_description
-       jobs.job_name
-       jobs.result_folder_path
-       jobs.planned_end_date
-       jobs.subdomain
-       jobs.start_date
-       job_types.system_id
-       users.username
+select jobs.id,
+       jobs.app_id,
+       jobs.user_id,
+       jobs.status,
+       jobs.job_description,
+       jobs.job_name,
+       jobs.result_folder_path,
+       jobs.planned_end_date,
+       jobs.subdomain,
+       jobs.start_date,
+       job_types.system_id,
+       users.username,
        job_steps.external_id
   from jobs
   join job_types on jobs.job_type_id = job_types.id
@@ -279,9 +285,12 @@ func lookupByExternalID(db *sql.DB, externalID string) (*Job, error) {
 	var (
 		err            error
 		job            *Job
+		subdomain      sql.NullString
 		startDate      pq.NullTime
 		plannedEndDate pq.NullTime
 	)
+
+	job = &Job{}
 
 	if err = db.QueryRow(jobByExternalIDQuery, externalID).Scan(
 		&job.ID,
@@ -292,9 +301,11 @@ func lookupByExternalID(db *sql.DB, externalID string) (*Job, error) {
 		&job.Name,
 		&job.ResultFolder,
 		&plannedEndDate,
+		&subdomain,
 		&startDate,
 		&job.Type,
 		&job.User,
+		&job.ExternalID,
 	); err != nil {
 		return nil, err
 	}
@@ -303,6 +314,9 @@ func lookupByExternalID(db *sql.DB, externalID string) (*Job, error) {
 	}
 	if startDate.Valid {
 		job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
+	}
+	if subdomain.Valid {
+		job.Subdomain = subdomain.String
 	}
 
 	return job, nil
@@ -354,7 +368,7 @@ func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
 const stepTypeQuery = `
 select job_types.name
   from job_types
-  join jobs on job_types.job_id = jobs.id
+  join jobs on job_types.id = jobs.job_type_id
  where jobs.id = $1
  limit 1`
 
