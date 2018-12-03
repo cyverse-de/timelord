@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -54,12 +55,12 @@ func sendNotif(j *Job, status, subject, msg string) error {
 	}
 
 	// We need to get the user's email address from the iplant-groups service.
-	user := NewUser(ParseID(j.User.Username))
+	user := NewUser(ParseID(j.User))
 	if err = user.Get(); err != nil {
 		return errors.Wrap(err, "failed to get user info")
 	}
 
-	u := ParseID(j.User.Username)
+	u := ParseID(j.User)
 	sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse %s", j.StartDate)
@@ -169,7 +170,6 @@ func main() {
 		configPath      = flag.String("config", "/etc/iplant/de/jobservices.yml", "The path to the YAML config file.")
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
-		graphqlBase     = flag.String("graphql", "http://graphql-de/v1alpha1/graphql", "The base URL for the graphql provider.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the Redis set containing job IDs as members. Used to track warning notifications.")
 	)
@@ -210,6 +210,20 @@ func main() {
 		log.Fatal("amqp.exchange.type must be set in the config file")
 	}
 
+	dbURI := cfg.GetString("db.uri")
+	if dbURI == "" {
+		log.Fatal("db.uri must be set in the config file")
+	}
+
+	db, err := sql.Open("postgres", dbURI)
+	if err != nil {
+		log.Fatal(errors.Wrapf(err, "error connecting to database %s", dbURI))
+	}
+
+	if err = db.Ping(); err != nil {
+		log.Fatal(errors.Wrapf(err, "error pinging database %s", dbURI))
+	}
+
 	logger.Info("configuring messaging support...")
 	amqpclient, err := messaging.NewClient(amqpURI, false)
 	if err != nil {
@@ -224,7 +238,7 @@ func main() {
 		exchangeType,
 		"timelord",
 		messaging.UpdatesKey,
-		CreateMessageHandler(*graphqlBase),
+		CreateMessageHandler(db),
 		0,
 	)
 	logger.Info("done configuring messaging support")
@@ -269,7 +283,7 @@ func main() {
 		)
 
 		for {
-			warnings, err = JobKillWarnings(*graphqlBase, *warningInterval)
+			warnings, err = JobKillWarnings(db, *warningInterval)
 			if err != nil {
 				logger.Error(err)
 			} else {
@@ -292,14 +306,14 @@ func main() {
 				}
 			}
 
-			jl, err = JobsToKill(*graphqlBase)
+			jl, err = JobsToKill(db)
 			if err != nil {
 				logger.Error(errors.Wrap(err, "error getting list of jobs to kill"))
 				continue
 			}
 
 			for _, j := range jl {
-				if err = KillJob(*appsBase, j.ID, j.User.Username); err != nil {
+				if err = KillJob(*appsBase, j.ID, j.User); err != nil {
 					logger.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 				} else {
 					if err = SendKillNotification(&j); err != nil {
