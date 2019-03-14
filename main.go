@@ -162,6 +162,31 @@ func SendWarningNotification(j *Job) error {
 	return sendNotif(j, j.Status, subject, msg)
 }
 
+func sendWarning(db *sql.DB, redisclient *redis.Client, warningInterval int64, redisKey string) {
+	warnings, err := JobKillWarnings(db, warningInterval)
+	if err != nil {
+		logger.Error(err)
+	} else {
+		for _, w := range warnings {
+			sent, err := redisclient.SIsMember(redisKey, w.ID).Result()
+			if err != nil {
+				logger.Error(errors.Wrapf(err, "error checking redis set to see if warning has already been sent for analysis %s", w.ID))
+				continue
+			}
+
+			if !sent {
+				if err = SendWarningNotification(&w); err != nil {
+					logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", w.ID))
+				} else {
+					if err = redisclient.SAdd(redisKey, w.ID).Err(); err != nil {
+						logger.Error(errors.Wrapf(err, "error adding analysis ID %s to redis set to mark warning as having been sent", w.ID))
+					}
+				}
+			}
+		}
+	}
+}
+
 func main() {
 	var (
 		err             error
@@ -276,35 +301,14 @@ func main() {
 	logger.Info("done configuring redis support")
 
 	go func() {
-		var (
-			jl       []Job
-			warnings []Job
-			sent     bool
-		)
+		var jl []Job
 
 		for {
-			warnings, err = JobKillWarnings(db, *warningInterval)
-			if err != nil {
-				logger.Error(err)
-			} else {
-				for _, w := range warnings {
-					sent, err = redisclient.SIsMember(*warningSentKey, w.ID).Result()
-					if err != nil {
-						logger.Error(errors.Wrapf(err, "error checking redis set to see if warning has already been sent for analysis %s", w.ID))
-						continue
-					}
+			// 1 hour warning
+			sendWarning(db, redisclient, *warningInterval, *warningSentKey)
 
-					if !sent {
-						if err = SendWarningNotification(&w); err != nil {
-							logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", w.ID))
-						} else {
-							if err = redisclient.SAdd(*warningSentKey, w.ID).Err(); err != nil {
-								logger.Error(errors.Wrapf(err, "error adding analysis ID %s to redis set to mark warning as having been sent", w.ID))
-							}
-						}
-					}
-				}
-			}
+			// 1 day warning
+			sendWarning(db, redisclient, 1440, "onedaywarning")
 
 			jl, err = JobsToKill(db)
 			if err != nil {
