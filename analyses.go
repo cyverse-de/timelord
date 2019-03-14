@@ -477,7 +477,7 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 
 		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
 		// then convert back to milliseconds.
-		endDate := time.Unix(0, sdnano).Add(48*time.Hour).UnixNano() / 1000000
+		endDate := time.Unix(0, sdnano).Add(72*time.Hour).UnixNano() / 1000000
 		if err = setPlannedEndDate(db, analysis.ID, endDate); err != nil {
 			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}
