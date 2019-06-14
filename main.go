@@ -220,6 +220,13 @@ func main() {
 	}
 	logger.Info("done configuring user lookups")
 
+	k8sEnabled := cfg.GetBool("vice.k8s-enabled")
+
+	appExposerBase := cfg.GetString("k8s.app-exposer.base")
+	if appExposerBase == "" {
+		log.Fatal("k8s.app-exposer.base must be set in the config file")
+	}
+
 	amqpURI := cfg.GetString("amqp.uri")
 	if amqpURI == "" {
 		log.Fatal("amqp.uri must be set in the config file")
@@ -300,6 +307,12 @@ func main() {
 	}
 	logger.Info("done configuring redis support")
 
+	jobKiller := &JobKiller{
+		K8sEnabled: k8sEnabled,
+		AppsBase: *appsBase,
+		AppExposerBase: appExposerBase,
+	}
+
 	go func() {
 		var jl []Job
 
@@ -317,7 +330,7 @@ func main() {
 			}
 
 			for _, j := range jl {
-				if err = KillJob(*appsBase, j.ID, j.User); err != nil {
+				if err = jobKiller.KillJob(j.ID, j.User); err != nil {
 					logger.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 				} else {
 					if err = SendKillNotification(&j); err != nil {

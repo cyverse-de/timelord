@@ -213,12 +213,28 @@ func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
 	return jobs, nil
 }
 
-// KillJob uses the provided API at the base URL to kill a running job. This
+// JobKiller is responsible for killing jobs either in HTCondor or in K8s.
+type JobKiller struct {
+	K8sEnabled bool // whether or not the VICE apps are running k8s
+	AppsBase string // base URL for the apps service
+	AppExposerBase string // base URL for the app-exposer serivce
+}
+
+// KillJob uses either the apps or app-exposer APIs to kill a VICE job.
+func (j *JobKiller) KillJob(jobID, username string) error {
+	if j.K8sEnabled {
+		return j.killK8sJob(jobID)
+	} 
+	return j.killCondorJob(jobID, username)
+
+}
+
+// killCondorJob uses the provided API at the base URL to kill a running job. This
 // will probably be to the apps service. jobID should be the UUID for the Job,
 // typically returned in the ID field by the analyses service. The username
 // should be the short username for the user that launched the job.
-func KillJob(api, jobID, username string) error {
-	apiURL, err := url.Parse(api)
+func (j *JobKiller) killCondorJob(jobID, username string) error {
+	apiURL, err := url.Parse(j.AppsBase)
 	if err != nil {
 		return err
 	}
@@ -249,7 +265,42 @@ func KillJob(api, jobID, username string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for GET %s was %d as %s", apiURL.String(), resp.StatusCode, username)
+		return fmt.Errorf("response status code for POST %s was %d as %s", apiURL.String(), resp.StatusCode, username)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	logger.Infof("response from %s was: %s", req.URL, string(body))
+	return nil
+}
+
+// killK8sJob uses the app-exposer API to make a job save its outputs and exit.
+// JobID should be the external_id (AKA invocationID) for the job.
+func (j *JobKiller) killK8sJob(jobID string) error {
+	apiURL, err := url.Parse(j.AppExposerBase)
+	if err != nil {
+		return err
+	}
+
+	apiURL.Path = filepath.Join(apiURL.Path, "vice", jobID, "save-and-exit")
+
+	req, err := http.NewRequest(http.MethodPost, apiURL.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("response status code for POST %s was %d", apiURL.String(), resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
