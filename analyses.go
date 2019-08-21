@@ -296,7 +296,7 @@ func (j *JobKiller) killK8sJob(db *sql.DB, jobID string) error {
 		return err
 	}
 
-	if rows, err = db.Query(externalIDsQuery); err != nil {
+	if rows, err = db.Query(externalIDsQuery, jobID); err != nil {
 		return err
 	}
 	defer rows.Close()
