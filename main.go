@@ -195,6 +195,7 @@ func main() {
 		configPath      = flag.String("config", "/etc/iplant/de/jobservices.yml", "The path to the YAML config file.")
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
+		appExposerBase  = flag.String("app-exposer", "http://app-exposer", "The base URL for the app-exposer service.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the Redis set containing job IDs as members. Used to track warning notifications.")
 	)
@@ -221,11 +222,6 @@ func main() {
 	logger.Info("done configuring user lookups")
 
 	k8sEnabled := cfg.GetBool("vice.k8s-enabled")
-
-	appExposerBase := cfg.GetString("k8s.app-exposer.base")
-	if appExposerBase == "" {
-		log.Fatal("k8s.app-exposer.base must be set in the config file")
-	}
 
 	amqpURI := cfg.GetString("amqp.uri")
 	if amqpURI == "" {
@@ -308,9 +304,9 @@ func main() {
 	logger.Info("done configuring redis support")
 
 	jobKiller := &JobKiller{
-		K8sEnabled: k8sEnabled,
-		AppsBase: *appsBase,
-		AppExposerBase: appExposerBase,
+		K8sEnabled:     k8sEnabled,
+		AppsBase:       *appsBase,
+		AppExposerBase: *appExposerBase,
 	}
 
 	go func() {
