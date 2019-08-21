@@ -215,16 +215,16 @@ func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
 
 // JobKiller is responsible for killing jobs either in HTCondor or in K8s.
 type JobKiller struct {
-	K8sEnabled bool // whether or not the VICE apps are running k8s
-	AppsBase string // base URL for the apps service
+	K8sEnabled     bool   // whether or not the VICE apps are running k8s
+	AppsBase       string // base URL for the apps service
 	AppExposerBase string // base URL for the app-exposer serivce
 }
 
 // KillJob uses either the apps or app-exposer APIs to kill a VICE job.
-func (j *JobKiller) KillJob(jobID, username string) error {
+func (j *JobKiller) KillJob(db *sql.DB, jobID, username string) error {
 	if j.K8sEnabled {
-		return j.killK8sJob(jobID)
-	} 
+		return j.killK8sJob(db, jobID)
+	}
 	return j.killCondorJob(jobID, username)
 
 }
@@ -277,38 +277,74 @@ func (j *JobKiller) killCondorJob(jobID, username string) error {
 	return nil
 }
 
+const externalIDsQuery = `
+select job_steps.external_id
+  from job_steps
+ where job_steps.job_id = $1`
+
 // killK8sJob uses the app-exposer API to make a job save its outputs and exit.
 // JobID should be the external_id (AKA invocationID) for the job.
-func (j *JobKiller) killK8sJob(jobID string) error {
-	apiURL, err := url.Parse(j.AppExposerBase)
+func (j *JobKiller) killK8sJob(db *sql.DB, jobID string) error {
+	var (
+		err         error
+		rows        *sql.Rows
+		externalIDs []string
+	)
+
+	origAPIURL, err := url.Parse(j.AppExposerBase)
 	if err != nil {
 		return err
 	}
 
-	apiURL.Path = filepath.Join(apiURL.Path, "vice", jobID, "save-and-exit")
-
-	req, err := http.NewRequest(http.MethodPost, apiURL.String(), nil)
-	if err != nil {
+	if rows, err = db.Query(externalIDsQuery); err != nil {
 		return err
 	}
+	defer rows.Close()
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return err
+		}
+		externalIDs = append(externalIDs, id)
 
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for POST %s was %d", apiURL.String(), resp.StatusCode)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
 	}
 
-	logger.Infof("response from %s was: %s", req.URL, string(body))
+	for _, externalID := range externalIDs {
+		var apiURL *url.URL
+		apiURL, err = url.Parse(origAPIURL.String()) // lol
+		if err != nil {
+			return errors.Wrapf(err, "error parsing URL %s while processing external-id %s", origAPIURL.String(), externalID)
+		}
+
+		apiURL.Path = filepath.Join(apiURL.Path, "vice", externalID, "save-and-exit")
+
+		req, err := http.NewRequest(http.MethodPost, apiURL.String(), nil)
+		if err != nil {
+			return errors.Wrapf(err, "error creating save-and-exit request for external-id %s", externalID)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return errors.Wrapf(err, "error calling save-and-exit for external-id %s", externalID)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			return fmt.Errorf("response status code for POST %s was %d", apiURL.String(), resp.StatusCode)
+		}
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return errors.Wrapf(err, "error reading response body of save-and-exit call for external-id %s", externalID)
+		}
+
+		logger.Infof("response from %s was: %s", req.URL, string(body))
+
+		resp.Body.Close()
+	}
+
 	return nil
 }
 

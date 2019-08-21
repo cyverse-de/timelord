@@ -326,7 +326,7 @@ func main() {
 			}
 
 			for _, j := range jl {
-				if err = jobKiller.KillJob(j.ID, j.User); err != nil {
+				if err = jobKiller.KillJob(db, j.ID, j.User); err != nil {
 					logger.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 				} else {
 					if err = SendKillNotification(&j); err != nil {
