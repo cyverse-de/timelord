@@ -453,21 +453,17 @@ func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
 }
 
 const getUserIDQuery = `
-SELECT id
-  FROM users
- WHERE username = $1
+SELECT user_id
+  FROM jobs
+ WHERE id = $1
 `
 
-func getUserID(db *sql.DB, username string) (string, error) {
+func getUserIDForJob(db *sql.DB, invocationID string) (string, error) {
 	var (
 		err    error
 		userID string
 	)
-
-	if !strings.HasSuffix(username, "@iplantcollaborative.org") {
-		username = fmt.Sprintf("%s@iplantcollaborative.org", username)
-	}
-	if err = db.QueryRow(getUserIDQuery, username).Scan(&userID); err != nil {
+	if err = db.QueryRow(getUserIDQuery, invocationID).Scan(&userID); err != nil {
 		return "", err
 	}
 	return userID, nil
@@ -564,7 +560,7 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 
 		// Set the subdomain
 		if analysis.Subdomain == "" {
-			userID, err := getUserID(db, update.Job.Submitter)
+			userID, err := getUserIDForJob(db, update.Job.InvocationID)
 			if err != nil {
 				log.Error(errors.Wrapf(err, "error getting userID for user %s", update.Job.Submitter))
 			} else {
