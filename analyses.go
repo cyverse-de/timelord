@@ -452,23 +452,6 @@ func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
 	return err
 }
 
-const getUserIDQuery = `
-SELECT user_id
-  FROM jobs
- WHERE id = $1
-`
-
-func getUserIDForJob(db *sql.DB, invocationID string) (string, error) {
-	var (
-		err    error
-		userID string
-	)
-	if err = db.QueryRow(getUserIDQuery, invocationID).Scan(&userID); err != nil {
-		return "", err
-	}
-	return userID, nil
-}
-
 const stepTypeQuery = `
 SELECT t.name
   FROM jobs j
@@ -507,6 +490,23 @@ func isInteractive(db *sql.DB, id string) (bool, error) {
 	}
 
 	return found, nil
+}
+
+const getUserIDQuery = `
+SELECT user_id
+  FROM jobs
+ WHERE id = $1
+`
+
+func getUserIDForJob(db *sql.DB, invocationID string) (string, error) {
+	var (
+		err    error
+		userID string
+	)
+	if err = db.QueryRow(getUserIDQuery, invocationID).Scan(&userID); err != nil {
+		return "", err
+	}
+	return userID, nil
 }
 
 // CreateMessageHandler returns a function that can be used by the messaging
@@ -560,15 +560,17 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 
 		// Set the subdomain
 		if analysis.Subdomain == "" {
-			userID, err := getUserIDForJob(db, update.Job.InvocationID)
+			log.Infof("invocationID is %s", externalID)
+
+			userID, err := getUserIDForJob(db, externalID)
 			if err != nil {
-				log.Error(errors.Wrapf(err, "error getting userID for user %s", update.Job.Submitter))
+				log.Error(errors.Wrapf(err, "error getting userID for job %s", externalID))
 			} else {
-				log.Infof("user id is %s and invocation id is %s", userID, update.Job.InvocationID)
+				log.Infof("user id is %s and invocation id is %s", userID, externalID)
 
-				subdomain := generateSubdomain(userID, update.Job.InvocationID)
+				subdomain := generateSubdomain(userID, externalID)
 
-				log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, update.Job.InvocationID)
+				log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, externalID)
 
 				if err = setSubdomain(db, analysis.ID, subdomain); err != nil {
 					log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
