@@ -452,6 +452,27 @@ func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
 	return err
 }
 
+const getUserIDQuery = `
+SELECT id
+  FROM users
+ WHERE username = $1
+`
+
+func getUserID(db *sql.DB, username string) (string, error) {
+	var (
+		err    error
+		userID string
+	)
+
+	if !strings.HasSuffix(username, "@iplantcollaborative.org") {
+		username = fmt.Sprintf("%s@iplantcollaborative.org", username)
+	}
+	if err = db.QueryRow(getUserIDQuery, username).Scan(&userID); err != nil {
+		return "", err
+	}
+	return userID, nil
+}
+
 const stepTypeQuery = `
 SELECT t.name
   FROM jobs j
@@ -543,14 +564,19 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 
 		// Set the subdomain
 		if analysis.Subdomain == "" {
-			log.Infof("user id is %s and invocation id is %s", update.Job.UserID, update.Job.InvocationID)
+			userID, err := getUserID(db, update.Job.Submitter)
+			if err != nil {
+				log.Error(errors.Wrapf(err, "error getting userID for user %s", update.Job.Submitter))
+			} else {
+				log.Infof("user id is %s and invocation id is %s", userID, update.Job.InvocationID)
 
-			subdomain := generateSubdomain(update.Job.UserID, update.Job.InvocationID)
+				subdomain := generateSubdomain(userID, update.Job.InvocationID)
 
-			log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, update.Job.UserID, update.Job.InvocationID)
+				log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, update.Job.InvocationID)
 
-			if err = setSubdomain(db, analysis.ID, subdomain); err != nil {
-				log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
+				if err = setSubdomain(db, analysis.ID, subdomain); err != nil {
+					log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
+				}
 			}
 		}
 
