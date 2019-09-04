@@ -415,11 +415,11 @@ func generateSubdomain(userID, externalID string) string {
 
 const setSubdomainMutation = `update only jobs set subdomain = $1 where id = $2`
 
-func setSubdomain(db *sql.DB, id, subdomain string) error {
+func setSubdomain(db *sql.DB, analysisID, subdomain string) error {
 	var err error
 
-	if _, err = db.Exec(setSubdomainMutation, subdomain, id); err != nil {
-		return errors.Wrapf(err, "error setting subdomain for job %s to %s", id, subdomain)
+	if _, err = db.Exec(setSubdomainMutation, subdomain, analysisID); err != nil {
+		return errors.Wrapf(err, "error setting subdomain for job %s to %s", analysisID, subdomain)
 	}
 
 	return err
@@ -543,7 +543,12 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 
 		// Set the subdomain
 		if analysis.Subdomain == "" {
+			log.Infof("user id is %s and invocation id is %s", update.Job.UserID, update.Job.InvocationID)
+
 			subdomain := generateSubdomain(update.Job.UserID, update.Job.InvocationID)
+
+			log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, update.Job.UserID, update.Job.InvocationID)
+
 			if err = setSubdomain(db, analysis.ID, subdomain); err != nil {
 				log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
 			}
