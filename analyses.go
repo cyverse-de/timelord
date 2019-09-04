@@ -498,12 +498,12 @@ SELECT user_id
  WHERE id = $1
 `
 
-func getUserIDForJob(db *sql.DB, invocationID string) (string, error) {
+func getUserIDForJob(db *sql.DB, analysisID string) (string, error) {
 	var (
 		err    error
 		userID string
 	)
-	if err = db.QueryRow(getUserIDQuery, invocationID).Scan(&userID); err != nil {
+	if err = db.QueryRow(getUserIDQuery, analysisID).Scan(&userID); err != nil {
 		return "", err
 	}
 	return userID, nil
@@ -560,14 +560,14 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 
 		// Set the subdomain
 		if analysis.Subdomain == "" {
-			log.Infof("invocationID is %s", externalID)
-
-			userID, err := getUserIDForJob(db, externalID)
+			// make sure to use analysis.ID, not external ID here.
+			userID, err := getUserIDForJob(db, analysis.ID)
 			if err != nil {
-				log.Error(errors.Wrapf(err, "error getting userID for job %s", externalID))
+				log.Error(errors.Wrapf(err, "error getting userID for job %s", analysis.ID))
 			} else {
 				log.Infof("user id is %s and invocation id is %s", userID, externalID)
 
+				// make sure to use externalID, not analysis.ID here
 				subdomain := generateSubdomain(userID, externalID)
 
 				log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, externalID)
