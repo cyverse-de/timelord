@@ -267,7 +267,7 @@ func main() {
 		"timelord",
 		messaging.UpdatesKey,
 		CreateMessageHandler(db),
-		0,
+		100,
 	)
 	logger.Info("done configuring messaging support")
 
