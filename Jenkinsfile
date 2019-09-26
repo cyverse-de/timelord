@@ -33,7 +33,9 @@ node('docker') {
         try {
             stage "Test"
             try {
-              sh "docker run --rm --name ${dockerTestRunner} --entrypoint 'sh' ${dockerRepo} -c \"go test -v github.com/cyverse-de/${service.repo} | tee /dev/stderr | go-junit-report\" > test-results.xml"
+                sh "docker create --name ${dockerTestRunner} ${dockerRepo}"
+                sh "docker cp ${dockerTestRunner}:/test-results.xml ."
+                sh "docker rm ${dockerTestRunner}"
             } finally {
                 junit 'test-results.xml'
 
