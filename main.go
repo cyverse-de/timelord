@@ -163,23 +163,23 @@ func SendWarningNotification(j *Job) error {
 }
 
 func sendWarning(db *sql.DB, redisclient *redis.Client, warningInterval int64, redisKey string) {
-	warnings, err := JobKillWarnings(db, warningInterval)
+	jobs, err := JobKillWarnings(db, warningInterval)
 	if err != nil {
 		logger.Error(err)
 	} else {
-		for _, w := range warnings {
-			sent, err := redisclient.SIsMember(redisKey, w.ID).Result()
+		for _, j := range jobs {
+			sent, err := redisclient.SIsMember(redisKey, j.ID).Result()
 			if err != nil {
-				logger.Error(errors.Wrapf(err, "error checking redis set to see if warning has already been sent for analysis %s", w.ID))
+				logger.Error(errors.Wrapf(err, "error checking redis set to see if warning has already been sent for analysis %s", j.ID))
 				continue
 			}
 
 			if !sent {
-				if err = SendWarningNotification(&w); err != nil {
-					logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", w.ID))
+				if err = SendWarningNotification(&j); err != nil {
+					logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", j.ID))
 				} else {
-					if err = redisclient.SAdd(redisKey, w.ID).Err(); err != nil {
-						logger.Error(errors.Wrapf(err, "error adding analysis ID %s to redis set to mark warning as having been sent", w.ID))
+					if err = redisclient.SAdd(redisKey, j.ID).Err(); err != nil {
+						logger.Error(errors.Wrapf(err, "error adding analysis ID %s to redis set to mark warning as having been sent", j.ID))
 					}
 				}
 			}
@@ -188,6 +188,8 @@ func sendWarning(db *sql.DB, redisclient *redis.Client, warningInterval int64, r
 }
 
 func main() {
+	logrus.SetReportCaller(true)
+
 	var (
 		err             error
 		cfg             *viper.Viper
