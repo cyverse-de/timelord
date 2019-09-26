@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -23,6 +25,10 @@ import (
 	_ "github.com/lib/pq"
 
 	"gopkg.in/cyverse-de/messaging.v4"
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 const defaultConfig = `db:
@@ -162,26 +168,39 @@ func SendWarningNotification(j *Job) error {
 	return sendNotif(j, j.Status, subject, msg)
 }
 
-func sendWarning(db *sql.DB, redisclient *redis.Client, warningInterval int64, redisKey string) {
+func sendWarning(db *sql.DB, k8s *K8sClient, warningInterval int64, warningKey string) {
 	jobs, err := JobKillWarnings(db, warningInterval)
 	if err != nil {
 		logger.Error(err)
 	} else {
 		for _, j := range jobs {
-			sent, err := redisclient.SIsMember(redisKey, j.ID).Result()
+			// get the deployment
+			var deployment *appsv1.Deployment
+
+			logger.Warnf("getting deployment for job ID %s", j.ID)
+
+			deployment, err := k8s.getDeployment(j.ID)
 			if err != nil {
-				logger.Error(errors.Wrapf(err, "error checking redis set to see if warning has already been sent for analysis %s", j.ID))
+				logger.Error(errors.Wrapf(err, "error getting deployment for job ID %s", j.ID))
 				continue
 			}
 
-			if !sent {
-				if err = SendWarningNotification(&j); err != nil {
+			// check for the annotation saying the warning has been sent
+			wasSent := k8s.deploymentHasAnnotation(deployment, warningKey)
+			if err != nil {
+				logger.Error(errors.Wrapf(err, "error getting annotation key %s for deployment %s", warningKey, j.ID))
+				continue
+			}
+
+			if !wasSent {
+				err = SendWarningNotification(&j)
+				if err != nil {
 					logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", j.ID))
-				} else {
-					if err = redisclient.SAdd(redisKey, j.ID).Err(); err != nil {
-						logger.Error(errors.Wrapf(err, "error adding analysis ID %s to redis set to mark warning as having been sent", j.ID))
-					}
+					continue
 				}
+
+				// Set the annotation saying that the 1 hour warning was sent
+				k8s.annotateDeployment(deployment, warningKey, "true")
 			}
 		}
 	}
@@ -191,16 +210,71 @@ func main() {
 	logrus.SetReportCaller(true)
 
 	var (
-		err             error
-		cfg             *viper.Viper
+		err        error
+		kubeconfig *string
+		cfg        *viper.Viper
+
 		notifPath       = "/notification"
 		configPath      = flag.String("config", "/etc/iplant/de/jobservices.yml", "The path to the YAML config file.")
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
+		namespace       = flag.String("namespace", "vice-apps", "The namespace that VICE analyses run in.")
 		appExposerBase  = flag.String("app-exposer", "http://app-exposer", "The base URL for the app-exposer service.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the Redis set containing job IDs as members. Used to track warning notifications.")
 	)
+
+	// if cluster is set, then
+	if cluster := os.Getenv("CLUSTER"); cluster != "" {
+		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+	} else {
+		// If the home directory exists, then assume that the kube config will be read
+		// from ~/.kube/config.
+		if home := os.Getenv("HOME"); home != "" {
+			kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+		} else {
+			// If the home directory doesn't exist, then allow the user to specify a path.
+			kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+		}
+	}
+
+	// Print error and exit if *kubeconfig is not empty and doesn't actually
+	// exist. If *kubeconfig is blank, then the app may be running inside the
+	// cluster, so let things proceed.
+	if *kubeconfig != "" {
+		_, err = os.Stat(*kubeconfig)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.Fatalf("config %s does not exist", *kubeconfig)
+			}
+			log.Fatal(errors.Wrapf(err, "error stat'ing the kubeconfig %s", *kubeconfig))
+		}
+	}
+
+	var config *rest.Config
+	if *kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
+		if err != nil {
+			log.Fatal(errors.Wrapf(err, "error building config from flags using kubeconfig %s", *kubeconfig))
+		}
+	} else {
+		// If the home directory doesn't exist and the user doesn't specify a path,
+		// then assume that we're running inside a cluster.
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			log.Fatal(errors.Wrapf(err, "error loading the config inside the cluster"))
+		}
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "error creating clientset from config"))
+	}
+
+	k8s := &K8sClient{
+		clientset: clientset,
+		namespace: *namespace,
+	}
 
 	flag.Parse()
 
@@ -316,10 +390,10 @@ func main() {
 
 		for {
 			// 1 hour warning
-			sendWarning(db, redisclient, *warningInterval, *warningSentKey)
+			sendWarning(db, k8s, *warningInterval, *warningSentKey)
 
 			// 1 day warning
-			sendWarning(db, redisclient, 1440, "onedaywarning")
+			sendWarning(db, k8s, 1440, "onedaywarning")
 
 			jl, err = JobsToKill(db)
 			if err != nil {
@@ -328,15 +402,14 @@ func main() {
 			}
 
 			for _, j := range jl {
-				if err = jobKiller.KillJob(db, j.ID, j.User); err != nil {
+				if err = jobKiller.KillJob(db, &j); err != nil {
 					logger.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
-				} else {
-					if err = SendKillNotification(&j); err != nil {
-						logger.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
-					}
-					if _, err = redisclient.SRem(*warningSentKey, j.ID).Result(); err != nil {
-						logger.Error(errors.Wrapf(err, "error removing analysis ID '%s' from the redis set", j.ID))
-					}
+					continue // skip to kill next job
+				}
+
+				if err = SendKillNotification(&j); err != nil {
+					logger.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
+					continue // technically not necessary, but added in case another statement is added to the loop
 				}
 			}
 
