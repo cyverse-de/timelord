@@ -31,8 +31,7 @@ require (
 	gopkg.in/cyverse-de/messaging.v4 v4.0.0-20180605152013-44770d49ac4d
 	gopkg.in/cyverse-de/model.v3 v3.0.0-20180604190733-9435ba8c8862
 	gopkg.in/yaml.v2 v2.2.2
-	k8s.io/api v0.0.0-20190925180651-d58b53da08f5
-	k8s.io/apimachinery v0.0.0-20190925235427-62598f38f24e
+	k8s.io/api v0.0.0-20190918155943-95b840bb6a1f
+	k8s.io/apimachinery v0.0.0-20190913080033-27d36303b655
 	k8s.io/client-go v0.0.0-20190918160344-1fbdaa4c8d90
-	k8s.io/utils v0.0.0-20190923111123-69764acb6e8e // indirect
 )
