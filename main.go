@@ -17,7 +17,6 @@ import (
 	_ "expvar"
 
 	"github.com/cyverse-de/configurate"
-	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -128,21 +127,49 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 
 // SendKillNotification sends a notification to the user telling them that
 // their job has been killed.
-func SendKillNotification(j *Job) error {
-	subject := fmt.Sprintf(KillSubjectFormat, j.Name)
-	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
-	if err != nil {
-		return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
-	}
-	msg := fmt.Sprintf(
-		KillMessageFormat,
-		j.Name,
-		j.ID,
-		endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
-		endtime.UTC().Format(time.UnixDate),
-		j.ResultFolder,
+func SendKillNotification(j *Job, k8s *K8sClient, killNotifKey string) error {
+	var (
+		err        error
+		deployment *appsv1.Deployment
+		wasSent    bool
 	)
-	return sendNotif(j, "Canceled", subject, msg)
+
+	logger.Warnf("getting deployment for job ID %s", j.ExternalID)
+
+	deployment, err = k8s.getDeployment(j.ExternalID)
+	if err != nil {
+		err = errors.Wrapf(err, "error getting deployment for job ID %s", j.ExternalID)
+		logger.Error(err)
+		return err
+	}
+
+	// check for the annotation saying the warning has been sent
+	wasSent = k8s.deploymentHasAnnotation(deployment, killNotifKey)
+	if err != nil {
+		err = errors.Wrapf(err, "error getting annotation key %s for deployment %s", killNotifKey, j.ExternalID)
+		logger.Error(err)
+		return err
+	}
+
+	logger.Warnf("external ID %s has been told of job termination: %v", j.ExternalID, wasSent)
+
+	if !wasSent {
+		subject := fmt.Sprintf(KillSubjectFormat, j.Name)
+		endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
+		if err != nil {
+			return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
+		}
+		msg := fmt.Sprintf(
+			KillMessageFormat,
+			j.Name,
+			j.ID,
+			endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+			endtime.UTC().Format(time.UnixDate),
+			j.ResultFolder,
+		)
+		err = sendNotif(j, "Canceled", subject, msg)
+	}
+	return err
 }
 
 // SendWarningNotification sends a notification to the user telling them that
@@ -177,25 +204,27 @@ func sendWarning(db *sql.DB, k8s *K8sClient, warningInterval int64, warningKey s
 			// get the deployment
 			var deployment *appsv1.Deployment
 
-			logger.Warnf("getting deployment for job ID %s", j.ID)
+			logger.Warnf("getting deployment for job ID %s", j.ExternalID)
 
-			deployment, err := k8s.getDeployment(j.ID)
+			deployment, err := k8s.getDeployment(j.ExternalID)
 			if err != nil {
-				logger.Error(errors.Wrapf(err, "error getting deployment for job ID %s", j.ID))
+				logger.Error(errors.Wrapf(err, "error getting deployment for job ID %s", j.ExternalID))
 				continue
 			}
 
 			// check for the annotation saying the warning has been sent
 			wasSent := k8s.deploymentHasAnnotation(deployment, warningKey)
 			if err != nil {
-				logger.Error(errors.Wrapf(err, "error getting annotation key %s for deployment %s", warningKey, j.ID))
+				logger.Error(errors.Wrapf(err, "error getting annotation key %s for deployment %s", warningKey, j.ExternalID))
 				continue
 			}
+
+			logger.Warnf("external ID %s has been warned of possible termination: %v", j.ExternalID, wasSent)
 
 			if !wasSent {
 				err = SendWarningNotification(&j)
 				if err != nil {
-					logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", j.ID))
+					logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", j.ExternalID))
 					continue
 				}
 
@@ -220,8 +249,9 @@ func main() {
 		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
 		namespace       = flag.String("namespace", "vice-apps", "The namespace that VICE analyses run in.")
 		appExposerBase  = flag.String("app-exposer", "http://app-exposer", "The base URL for the app-exposer service.")
+		killNotifKey    = flag.String("kill-notif-key", "killnotifsent", "The key for the annotation detailing whether the notification about job termination was sent.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
-		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the Redis set containing job IDs as members. Used to track warning notifications.")
+		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the annotation detailing whether the job termination warning was sent.")
 	)
 
 	// if cluster is set, then
@@ -347,38 +377,6 @@ func main() {
 	)
 	logger.Info("done configuring messaging support")
 
-	redishost := cfg.GetString("redis.host")
-	if redishost == "" {
-		log.Fatal("redis.host must be set in the config file")
-	}
-
-	redisport := cfg.GetInt("redis.port")
-	if redisport == 0 {
-		log.Fatal("redis.port must be set in the config file")
-	}
-
-	redispass := cfg.GetString("redis.password")
-	if redispass == "" {
-		log.Fatal("redis.password must be set in the config file")
-	}
-
-	redisdb := cfg.GetInt("redis.db.number")
-
-	logger.Info("configuring redis support...")
-	redisclient := redis.NewClient(
-		&redis.Options{
-			Addr:     fmt.Sprintf("%s:%d", redishost, redisport),
-			Password: redispass,
-			DB:       redisdb,
-		},
-	)
-
-	_, err = redisclient.Ping().Result()
-	if err != nil {
-		log.Fatal(err)
-	}
-	logger.Info("done configuring redis support")
-
 	jobKiller := &JobKiller{
 		K8sEnabled:     k8sEnabled,
 		AppsBase:       *appsBase,
@@ -407,7 +405,7 @@ func main() {
 					continue // skip to kill next job
 				}
 
-				if err = SendKillNotification(&j); err != nil {
+				if err = SendKillNotification(&j, k8s, *killNotifKey); err != nil {
 					logger.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
 					continue // technically not necessary, but added in case another statement is added to the loop
 				}
