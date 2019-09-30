@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloudflare/cfssl/log"
 	pq "github.com/lib/pq"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 	"gopkg.in/cyverse-de/messaging.v4"
 )
