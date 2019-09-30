@@ -235,7 +235,6 @@ func main() {
 		notifPath       = "/notification"
 		configPath      = flag.String("config", "/etc/iplant/de/jobservices.yml", "The path to the YAML config file.")
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
-		appsBase        = flag.String("apps", "http://apps", "The base URL for the apps service.")
 		namespace       = flag.String("namespace", "vice-apps", "The namespace that VICE analyses run in.")
 		appExposerBase  = flag.String("app-exposer", "http://app-exposer", "The base URL for the app-exposer service.")
 		killNotifKey    = flag.String("kill-notif-key", "killnotifsent", "The key for the annotation detailing whether the notification about job termination was sent.")
@@ -317,6 +316,11 @@ func main() {
 	log.Info("done configuring user lookups")
 
 	k8sEnabled := cfg.GetBool("vice.k8s-enabled")
+	appsBase := cfg.GetString("apps.base")
+
+	if appsBase == "" {
+		log.Fatal("apps.base must be set in the configuration file")
+	}
 
 	amqpURI := cfg.GetString("amqp.uri")
 	if amqpURI == "" {
@@ -368,7 +372,7 @@ func main() {
 
 	jobKiller := &JobKiller{
 		K8sEnabled:     k8sEnabled,
-		AppsBase:       *appsBase,
+		AppsBase:       appsBase,
 		AppExposerBase: *appExposerBase,
 	}
 
