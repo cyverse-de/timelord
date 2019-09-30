@@ -313,7 +313,7 @@ func (j *JobKiller) killCondorJob(jobID, username string) error {
 		return err
 	}
 
-	logger.Infof("response from %s was: %s", req.URL, string(body))
+	log.Infof("response from %s was: %s", req.URL, string(body))
 	return nil
 }
 
@@ -358,7 +358,7 @@ func (j *JobKiller) killK8sJob(db *sql.DB, job *Job) error {
 		return errors.Wrapf(err, "error reading response body of save-and-exit call for external-id %s", externalID)
 	}
 
-	logger.Infof("response from %s was: %s", req.URL, string(body))
+	log.Infof("response from %s was: %s", req.URL, string(body))
 
 	resp.Body.Close()
 

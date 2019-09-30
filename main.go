@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,7 +17,7 @@ import (
 
 	"github.com/cyverse-de/configurate"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	_ "github.com/lib/pq"
@@ -39,23 +38,13 @@ iplant_groups:
   user: grouper-user
 `
 
-var logger = logrus.WithFields(logrus.Fields{
-	"service": "timelord",
-	"art-id":  "timelord",
-	"group":   "org.cyverse",
-})
-
-func init() {
-	logrus.SetFormatter(&logrus.JSONFormatter{})
-}
-
 func sendNotif(j *Job, status, subject, msg string) error {
 	var err error
 
 	// Don't send notification if things aren't configured correctly. It's
 	// technically not an error, for now.
 	if NotifsURI == "" || UsersURI == "" {
-		logger.Infof("notification URI is %s and iplant-groups URI is %s", NotifsURI, UsersURI)
+		log.Infof("notification URI is %s and iplant-groups URI is %s", NotifsURI, UsersURI)
 		return nil
 	}
 
@@ -93,7 +82,7 @@ func sendNotif(j *Job, status, subject, msg string) error {
 		return errors.Wrap(err, "failed to read notification response body")
 	}
 
-	logger.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.ID, resp.Status, b)
+	log.Infof("notification: (invocation_id: %s, status: %s, body: %s)", j.ID, resp.Status, b)
 
 	return nil
 }
@@ -134,12 +123,12 @@ func SendKillNotification(j *Job, k8s *K8sClient, killNotifKey string) error {
 		wasSent    bool
 	)
 
-	logger.Warnf("getting deployment for job ID %s", j.ExternalID)
+	log.Warnf("getting deployment for job ID %s", j.ExternalID)
 
 	deployment, err = k8s.getDeployment(j.ExternalID)
 	if err != nil {
 		err = errors.Wrapf(err, "error getting deployment for job ID %s", j.ExternalID)
-		logger.Error(err)
+		log.Error(err)
 		return err
 	}
 
@@ -147,11 +136,11 @@ func SendKillNotification(j *Job, k8s *K8sClient, killNotifKey string) error {
 	wasSent = k8s.deploymentHasAnnotation(deployment, killNotifKey)
 	if err != nil {
 		err = errors.Wrapf(err, "error getting annotation key %s for deployment %s", killNotifKey, j.ExternalID)
-		logger.Error(err)
+		log.Error(err)
 		return err
 	}
 
-	logger.Warnf("external ID %s has been told of job termination: %v", j.ExternalID, wasSent)
+	log.Warnf("external ID %s has been told of job termination: %v", j.ExternalID, wasSent)
 
 	if !wasSent {
 		subject := fmt.Sprintf(KillSubjectFormat, j.Name)
@@ -198,33 +187,33 @@ func SendWarningNotification(j *Job) error {
 func sendWarning(db *sql.DB, k8s *K8sClient, warningInterval int64, warningKey string) {
 	jobs, err := JobKillWarnings(db, warningInterval)
 	if err != nil {
-		logger.Error(err)
+		log.Error(err)
 	} else {
 		for _, j := range jobs {
 			// get the deployment
 			var deployment *appsv1.Deployment
 
-			logger.Warnf("getting deployment for job ID %s", j.ExternalID)
+			log.Warnf("getting deployment for job ID %s", j.ExternalID)
 
 			deployment, err := k8s.getDeployment(j.ExternalID)
 			if err != nil {
-				logger.Error(errors.Wrapf(err, "error getting deployment for job ID %s", j.ExternalID))
+				log.Error(errors.Wrapf(err, "error getting deployment for job ID %s", j.ExternalID))
 				continue
 			}
 
 			// check for the annotation saying the warning has been sent
 			wasSent := k8s.deploymentHasAnnotation(deployment, warningKey)
 			if err != nil {
-				logger.Error(errors.Wrapf(err, "error getting annotation key %s for deployment %s", warningKey, j.ExternalID))
+				log.Error(errors.Wrapf(err, "error getting annotation key %s for deployment %s", warningKey, j.ExternalID))
 				continue
 			}
 
-			logger.Warnf("external ID %s has been warned of possible termination: %v", j.ExternalID, wasSent)
+			log.Warnf("external ID %s has been warned of possible termination: %v", j.ExternalID, wasSent)
 
 			if !wasSent {
 				err = SendWarningNotification(&j)
 				if err != nil {
-					logger.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", j.ExternalID))
+					log.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", j.ExternalID))
 					continue
 				}
 
@@ -236,7 +225,7 @@ func sendWarning(db *sql.DB, k8s *K8sClient, warningInterval int64, warningKey s
 }
 
 func main() {
-	logrus.SetReportCaller(true)
+	log.SetReportCaller(true)
 
 	var (
 		err        error
@@ -313,19 +302,19 @@ func main() {
 		log.Fatal(err)
 	}
 
-	logger.Info("configuring notification support...")
+	log.Info("configuring notification support...")
 	// configure the notification emitters
 	if err = ConfigureNotifications(cfg, notifPath); err != nil {
 		log.Fatal(err)
 	}
-	logger.Info("done configuring notification support")
+	log.Info("done configuring notification support")
 
-	logger.Info("configuring user lookups...")
+	log.Info("configuring user lookups...")
 	// configure the user lookups
 	if err = ConfigureUserLookups(cfg); err != nil {
 		log.Fatal(err)
 	}
-	logger.Info("done configuring user lookups")
+	log.Info("done configuring user lookups")
 
 	k8sEnabled := cfg.GetBool("vice.k8s-enabled")
 
@@ -358,7 +347,7 @@ func main() {
 		log.Fatal(errors.Wrapf(err, "error pinging database %s", dbURI))
 	}
 
-	logger.Info("configuring messaging support...")
+	log.Info("configuring messaging support...")
 	amqpclient, err := messaging.NewClient(amqpURI, false)
 	if err != nil {
 		log.Fatal(err)
@@ -375,7 +364,7 @@ func main() {
 		CreateMessageHandler(db),
 		100,
 	)
-	logger.Info("done configuring messaging support")
+	log.Info("done configuring messaging support")
 
 	jobKiller := &JobKiller{
 		K8sEnabled:     k8sEnabled,
@@ -395,18 +384,18 @@ func main() {
 
 			jl, err = JobsToKill(db)
 			if err != nil {
-				logger.Error(errors.Wrap(err, "error getting list of jobs to kill"))
+				log.Error(errors.Wrap(err, "error getting list of jobs to kill"))
 				continue
 			}
 
 			for _, j := range jl {
 				if err = jobKiller.KillJob(db, &j); err != nil {
-					logger.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
+					log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 					continue // skip to kill next job
 				}
 
 				if err = SendKillNotification(&j, k8s, *killNotifKey); err != nil {
-					logger.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
+					log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
 					continue // technically not necessary, but added in case another statement is added to the loop
 				}
 			}
@@ -416,10 +405,10 @@ func main() {
 	}()
 
 	listenAddr := fmt.Sprintf(":%s", *expvarPort)
-	logger.Infof("listening for expvar requests on %s", listenAddr)
+	log.Infof("listening for expvar requests on %s", listenAddr)
 	sock, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		logger.Fatal(err)
+		log.Fatal(err)
 	}
 	http.Serve(sock, nil)
 }
