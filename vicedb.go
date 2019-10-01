@@ -6,20 +6,69 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// VICEDatabaser interacts with the VICE database.
+type VICEDatabaser struct {
+	db *sql.DB
+}
+
+// NotifStatuses contains the info about what statuses were sent for each analysis.
+type NotifStatuses struct {
+	AnalysisID              string
+	ExternalID              string
+	HourWarningSent         bool
+	HourWarningFailureCount int
+	DayWarningSent          bool
+	DayWarningFailureCount  int
+	KillWarningSent         bool
+	KillWarningFailureCount int
+}
+
+const notifStatusQuery = `
+	select analysis_id,
+		   external_id,
+		   hour_warning_sent,
+		   hour_warning_failure_count,
+		   day_warning_sent,
+		   day_warning_failure_count,
+		   kill_warning_sent,
+		   kill_warning_failure_count
+	  from notif_statuses
+	 where analysis_id = $1
+`
+
+// NotifStatuses returns a filled out *NotifStatuses or nothing at all.
+func (v *VICEDatabaser) NotifStatuses(job *Job) (*NotifStatuses, error) {
+	var (
+		err           error
+		notifStatuses *NotifStatuses
+	)
+
+	notifStatuses = &NotifStatuses{}
+
+	if err = v.db.QueryRow(
+		notifStatusQuery,
+		job.ID,
+	).Scan(
+		&notifStatuses.AnalysisID,
+		&notifStatuses.ExternalID,
+		&notifStatuses.HourWarningSent,
+		&notifStatuses.HourWarningFailureCount,
+		&notifStatuses.DayWarningSent,
+		&notifStatuses.DayWarningFailureCount,
+		&notifStatuses.KillWarningSent,
+		&notifStatuses.KillWarningFailureCount,
+	); err != nil {
+		return nil, err
+	}
+
+	return notifStatuses, nil
+}
+
 const getNotifStatusIDQuery = `
 select id
   from notif_statuses
  where analysis_id = $1
 `
-
-const addNotifRecordQuery = `
-insert into notif_statuses (analysis_id, external_id) values ($1, $2) returning id
-`
-
-// VICEDatabaser interacts with the VICE database.
-type VICEDatabaser struct {
-	db *sql.DB
-}
 
 // AnalysisRecordExists checks whether the given analysisID is already in the database or not.
 func (v *VICEDatabaser) AnalysisRecordExists(analysisID string) bool {
@@ -39,6 +88,10 @@ func (v *VICEDatabaser) AnalysisRecordExists(analysisID string) bool {
 	}
 	return true
 }
+
+const addNotifRecordQuery = `
+insert into notif_statuses (analysis_id, external_id) values ($1, $2) returning id
+`
 
 // AddNotifRecord adds a new record to the notif_statuses table for the provided analysis.
 // Returns the ID of the new record.
@@ -143,6 +196,22 @@ func (v *VICEDatabaser) SetDayWarningSent(job *Job, wasSent bool) error {
 	return err
 }
 
+const setDayWarningFailureCountQuery = `
+update notif_statuses set day_warning_failure_count = $1 where analysis_id = $2
+`
+
+// SetDayWarningFailureCount sets the new value for the kill_warning_failure_count field.
+func (v *VICEDatabaser) SetDayWarningFailureCount(job *Job, failureCount int) error {
+	var err error
+
+	_, err = v.db.Exec(
+		setDayWarningFailureCountQuery,
+		failureCount,
+		job.ID,
+	)
+	return err
+}
+
 const setHourWarningSentQuery = `
 update notif_statuses set hour_warning_sent = $1 where analysis_id = $2
 `
@@ -160,6 +229,22 @@ func (v *VICEDatabaser) SetHourWarningSent(job *Job, wasSent bool) error {
 	return err
 }
 
+const setHourWarningFailureCountQuery = `
+update notif_statuses set hour_warning_failure_count = $1 where analysis_id = $2
+`
+
+// SetHourWarningFailureCount sets the new value for the kill_warning_failure_count field.
+func (v *VICEDatabaser) SetHourWarningFailureCount(job *Job, failureCount int) error {
+	var err error
+
+	_, err = v.db.Exec(
+		setHourWarningFailureCountQuery,
+		failureCount,
+		job.ID,
+	)
+	return err
+}
+
 const setKillWarningSentQuery = `
 update notif_statuses set kill_warning_sent = $1 where analysis_id = $2
 `
@@ -172,6 +257,22 @@ func (v *VICEDatabaser) SetKillWarningSent(job *Job, wasSent bool) error {
 	_, err = v.db.Exec(
 		setKillWarningSentQuery,
 		wasSent,
+		job.ID,
+	)
+	return err
+}
+
+const setKillWarningFailureCountQuery = `
+update notif_statuses set kill_warning_failure_count = $1 where analysis_id = $2
+`
+
+// SetKillWarningFailureCount sets the new value for the kill_warning_failure_count field.
+func (v *VICEDatabaser) SetKillWarningFailureCount(job *Job, failureCount int) error {
+	var err error
+
+	_, err = v.db.Exec(
+		setKillWarningFailureCountQuery,
+		failureCount,
 		job.ID,
 	)
 	return err

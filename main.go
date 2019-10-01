@@ -151,12 +151,22 @@ func SendWarningNotification(j *Job) error {
 	return sendNotif(j, j.Status, subject, msg)
 }
 
+const maxAttempts = 3
+
 func sendWarning(db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
 	jobs, err := JobKillWarnings(db, warningInterval)
 	if err != nil {
 		log.Error(err)
 	} else {
 		for _, j := range jobs {
+			var (
+				wasSent            bool
+				notifStatuses      *NotifStatuses
+				failureCount       int
+				updateWarningSent  func(*Job, bool) error
+				updateFailureCount func(*Job, int) error
+			)
+
 			analysisRecordExists := vicedb.AnalysisRecordExists(j.ID)
 
 			if !analysisRecordExists {
@@ -166,13 +176,23 @@ func sendWarning(db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warni
 				}
 			}
 
-			var wasSent bool
+			notifStatuses, err = vicedb.NotifStatuses(&j)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
 
 			switch warningKey {
 			case "warning-sent-key": // one hour warning
-				wasSent, err = vicedb.HourWarningSent(&j)
+				wasSent = notifStatuses.HourWarningSent
+				failureCount = notifStatuses.HourWarningFailureCount
+				updateWarningSent = vicedb.SetHourWarningSent
+				updateFailureCount = vicedb.SetHourWarningFailureCount
 			case "onedaywarning": // one day warning
-				wasSent, err = vicedb.DayWarningSent(&j)
+				wasSent = notifStatuses.DayWarningSent
+				failureCount = notifStatuses.DayWarningFailureCount
+				updateWarningSent = vicedb.SetDayWarningSent
+				updateFailureCount = vicedb.SetDayWarningFailureCount
 			default:
 				err = fmt.Errorf("unknown warning key: %s", warningKey)
 			}
@@ -185,23 +205,21 @@ func sendWarning(db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warni
 			log.Warnf("external ID %s has been warned of possible termination: %v", j.ExternalID, wasSent)
 
 			if !wasSent {
-				err = SendWarningNotification(&j)
-				if err != nil {
+				if err = SendWarningNotification(&j); err != nil {
 					log.Error(errors.Wrapf(err, "error sending warning notification for analysis %s", j.ExternalID))
+
+					failureCount = failureCount + 1
+
+					if err = updateFailureCount(&j, failureCount); err != nil {
+						log.Error(err)
+					}
 				}
 
-				switch warningKey {
-				case "warning-sent-key": // one hour warning
-					err = vicedb.SetHourWarningSent(&j, true)
-				case "onedaywarning": // one day warning
-					err = vicedb.SetDayWarningSent(&j, true)
-				default:
-					err = fmt.Errorf("unknown warning key: %s", warningKey)
-				}
-
-				if err != nil {
-					log.Error(err)
-					continue
+				if err == nil || failureCount >= maxAttempts {
+					if err = updateWarningSent(&j, true); err != nil {
+						log.Error(err)
+						continue
+					}
 				}
 			}
 		}
@@ -349,25 +367,40 @@ func main() {
 					}
 				}
 
-				var wasSent bool
-				wasSent, err = vicedb.KillWarningSent(&j)
+				var notifStatuses *NotifStatuses
+
+				notifStatuses, err = vicedb.NotifStatuses(&j)
 				if err != nil {
 					log.Error(err)
 					continue
 				}
 
-				if !wasSent {
-					if err = jobKiller.KillJob(db, &j); err != nil {
+				if !notifStatuses.KillWarningSent {
+					err = jobKiller.KillJob(db, &j)
+					if err != nil {
 						log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
+					} else {
+
+						err = SendKillNotification(&j, *killNotifKey)
+						if err != nil {
+							log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
+						}
 					}
 
-					if err = SendKillNotification(&j, *killNotifKey); err != nil {
-						log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
+					if err != nil {
+						notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
+
+						if err = vicedb.SetKillWarningFailureCount(&j, notifStatuses.KillWarningFailureCount); err != nil {
+							log.Error(err)
+							continue
+						}
 					}
 
-					if err = vicedb.SetKillWarningSent(&j, true); err != nil {
-						log.Error(err)
-						continue
+					if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
+						if err = vicedb.SetKillWarningSent(&j, true); err != nil {
+							log.Error(err)
+							continue
+						}
 					}
 				}
 			}
