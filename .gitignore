@@ -1,3 +1,5 @@
 timelord
 config.yml
 **/*.code-workspace
+**/jobservices.yml
+**/jobservices.yaml
