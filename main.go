@@ -23,7 +23,6 @@ import (
 	_ "github.com/lib/pq"
 
 	"gopkg.in/cyverse-de/messaging.v4"
-	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -117,47 +116,20 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 // SendKillNotification sends a notification to the user telling them that
 // their job has been killed.
 func SendKillNotification(j *Job, k8s *K8sClient, killNotifKey string) error {
-	var (
-		err        error
-		deployment *appsv1.Deployment
-		wasSent    bool
+	subject := fmt.Sprintf(KillSubjectFormat, j.Name)
+	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
+	}
+	msg := fmt.Sprintf(
+		KillMessageFormat,
+		j.Name,
+		j.ID,
+		endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+		endtime.UTC().Format(time.UnixDate),
+		j.ResultFolder,
 	)
-
-	log.Warnf("getting deployment for job ID %s", j.ExternalID)
-
-	deployment, err = k8s.getDeployment(j.ExternalID)
-	if err != nil {
-		err = errors.Wrapf(err, "error getting deployment for job ID %s", j.ExternalID)
-		log.Error(err)
-		return err
-	}
-
-	// check for the annotation saying the warning has been sent
-	wasSent = k8s.deploymentHasAnnotation(deployment, killNotifKey)
-	if err != nil {
-		err = errors.Wrapf(err, "error getting annotation key %s for deployment %s", killNotifKey, j.ExternalID)
-		log.Error(err)
-		return err
-	}
-
-	log.Warnf("external ID %s has been told of job termination: %v", j.ExternalID, wasSent)
-
-	if !wasSent {
-		subject := fmt.Sprintf(KillSubjectFormat, j.Name)
-		endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
-		if err != nil {
-			return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
-		}
-		msg := fmt.Sprintf(
-			KillMessageFormat,
-			j.Name,
-			j.ID,
-			endtime.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
-			endtime.UTC().Format(time.UnixDate),
-			j.ResultFolder,
-		)
-		err = sendNotif(j, "Canceled", subject, msg)
-	}
+	err = sendNotif(j, "Canceled", subject, msg)
 	return err
 }
 
@@ -184,27 +156,34 @@ func SendWarningNotification(j *Job) error {
 	return sendNotif(j, j.Status, subject, msg)
 }
 
-func sendWarning(db *sql.DB, k8s *K8sClient, warningInterval int64, warningKey string) {
+func sendWarning(db *sql.DB, vicedb *VICEDatabaser, k8s *K8sClient, warningInterval int64, warningKey string) {
 	jobs, err := JobKillWarnings(db, warningInterval)
 	if err != nil {
 		log.Error(err)
 	} else {
 		for _, j := range jobs {
-			// get the deployment
-			var deployment *appsv1.Deployment
+			analysisRecordExists := vicedb.AnalysisRecordExists(j.ID)
 
-			log.Warnf("getting deployment for job ID %s", j.ExternalID)
-
-			deployment, err := k8s.getDeployment(j.ExternalID)
-			if err != nil {
-				log.Error(errors.Wrapf(err, "error getting deployment for job ID %s", j.ExternalID))
-				continue
+			if !analysisRecordExists {
+				if _, err = vicedb.AddNotifRecord(&j); err != nil {
+					log.Error(err)
+					continue
+				}
 			}
 
-			// check for the annotation saying the warning has been sent
-			wasSent := k8s.deploymentHasAnnotation(deployment, warningKey)
+			var wasSent bool
+
+			switch warningKey {
+			case "warning-sent-key": // one hour warning
+				wasSent, err = vicedb.HourWarningSent(&j)
+			case "onedaywarning": // one day warning
+				wasSent, err = vicedb.DayWarningSent(&j)
+			default:
+				err = fmt.Errorf("unknown warning key: %s", warningKey)
+			}
+
 			if err != nil {
-				log.Error(errors.Wrapf(err, "error getting annotation key %s for deployment %s", warningKey, j.ExternalID))
+				log.Error(err)
 				continue
 			}
 
@@ -213,12 +192,22 @@ func sendWarning(db *sql.DB, k8s *K8sClient, warningInterval int64, warningKey s
 			if !wasSent {
 				err = SendWarningNotification(&j)
 				if err != nil {
-					log.Error(errors.Wrapf(err, "error sending warnining notification for analysis %s", j.ExternalID))
-					continue
+					log.Error(errors.Wrapf(err, "error sending warning notification for analysis %s", j.ExternalID))
 				}
 
-				// Set the annotation saying that the 1 hour warning was sent
-				k8s.annotateDeployment(deployment, warningKey, "true")
+				switch warningKey {
+				case "warning-sent-key": // one hour warning
+					err = vicedb.SetHourWarningSent(&j, true)
+				case "onedaywarning": // one day warning
+					err = vicedb.SetDayWarningSent(&j, true)
+				default:
+					err = fmt.Errorf("unknown warning key: %s", warningKey)
+				}
+
+				if err != nil {
+					log.Error(err)
+					continue
+				}
 			}
 		}
 	}
@@ -351,6 +340,24 @@ func main() {
 		log.Fatal(errors.Wrapf(err, "error pinging database %s", dbURI))
 	}
 
+	viceDBURI := cfg.GetString("vice.db.uri")
+	if viceDBURI == "" {
+		log.Fatal("vice.db.uri must be set in the config file")
+	}
+
+	vdb, err := sql.Open("postgres", viceDBURI)
+	if err != nil {
+		log.Fatal(errors.Wrapf(err, "error connecting to the vice database %s", viceDBURI))
+	}
+
+	if err = vdb.Ping(); err != nil {
+		log.Fatal(errors.Wrapf(err, "error pinging database %s", viceDBURI))
+	}
+
+	vicedb := &VICEDatabaser{
+		db: vdb,
+	}
+
 	log.Info("configuring messaging support...")
 	amqpclient, err := messaging.NewClient(amqpURI, false)
 	if err != nil {
@@ -381,10 +388,10 @@ func main() {
 
 		for {
 			// 1 hour warning
-			sendWarning(db, k8s, *warningInterval, *warningSentKey)
+			sendWarning(db, vicedb, k8s, *warningInterval, *warningSentKey)
 
 			// 1 day warning
-			sendWarning(db, k8s, 1440, "onedaywarning")
+			sendWarning(db, vicedb, k8s, 1440, "onedaywarning")
 
 			jl, err = JobsToKill(db)
 			if err != nil {
@@ -393,14 +400,35 @@ func main() {
 			}
 
 			for _, j := range jl {
-				if err = jobKiller.KillJob(db, &j); err != nil {
-					log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
-					continue // skip to kill next job
+				analysisRecordExists := vicedb.AnalysisRecordExists(j.ID)
+
+				if !analysisRecordExists {
+					if _, err = vicedb.AddNotifRecord(&j); err != nil {
+						log.Error(err)
+						continue
+					}
 				}
 
-				if err = SendKillNotification(&j, k8s, *killNotifKey); err != nil {
-					log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
-					continue // technically not necessary, but added in case another statement is added to the loop
+				var wasSent bool
+				wasSent, err = vicedb.KillWarningSent(&j)
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+
+				if !wasSent {
+					if err = jobKiller.KillJob(db, &j); err != nil {
+						log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
+					}
+
+					if err = SendKillNotification(&j, k8s, *killNotifKey); err != nil {
+						log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
+					}
+
+					if err = vicedb.SetKillWarningSent(&j, true); err != nil {
+						log.Error(err)
+						continue
+					}
 				}
 			}
 

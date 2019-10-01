@@ -74,14 +74,14 @@ select job_steps.external_id
  where job_steps.job_id = $1
  limit 1`
 
-func getExternalID(db *sql.DB, jobID string) (string, error) {
+func getExternalID(dedb *sql.DB, jobID string) (string, error) {
 	var (
 		err        error
 		row        *sql.Row
 		externalID string
 	)
 
-	row = db.QueryRow(
+	row = dedb.QueryRow(
 		externalIDsQuery,
 		jobID,
 	)
@@ -94,13 +94,13 @@ func getExternalID(db *sql.DB, jobID string) (string, error) {
 
 // JobsToKill returns a list of running jobs that are past their expiration date
 // and can be killed off. 'api' should be the base URL for the analyses service.
-func JobsToKill(db *sql.DB) ([]Job, error) {
+func JobsToKill(dedb *sql.DB) ([]Job, error) {
 	var (
 		err  error
 		rows *sql.Rows
 	)
 
-	if rows, err = db.Query(
+	if rows, err = dedb.Query(
 		jobsToKillQuery,
 		"Running",
 		time.Now().Format("2006-01-02 15:04:05.000000-07"),
@@ -144,7 +144,7 @@ func JobsToKill(db *sql.DB) ([]Job, error) {
 			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
 		}
 
-		job.ExternalID, err = getExternalID(db, job.ID)
+		job.ExternalID, err = getExternalID(dedb, job.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +182,7 @@ select jobs.id,
 // JobKillWarnings returns a list of running jobs that are set to be killed
 // within the number of minutes specified. 'api' should be the base URL for the
 // analyses service.
-func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
+func JobKillWarnings(dedb *sql.DB, minutes int64) ([]Job, error) {
 	var (
 		err  error
 		rows *sql.Rows
@@ -193,7 +193,7 @@ func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
 	// nowtimestamp := now.Format(fmtstring)
 	// futuretimestamp := now.Add(time.Duration(minutes) * time.Minute).Format(fmtstring)
 
-	if rows, err = db.Query(
+	if rows, err = dedb.Query(
 		jobWarningsQuery,
 		"Running",
 		now,
@@ -238,7 +238,7 @@ func JobKillWarnings(db *sql.DB, minutes int64) ([]Job, error) {
 			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
 		}
 
-		job.ExternalID, err = getExternalID(db, job.ID)
+		job.ExternalID, err = getExternalID(dedb, job.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -261,9 +261,9 @@ type JobKiller struct {
 }
 
 // KillJob uses either the apps or app-exposer APIs to kill a VICE job.
-func (j *JobKiller) KillJob(db *sql.DB, job *Job) error {
+func (j *JobKiller) KillJob(dedb *sql.DB, job *Job) error {
 	if j.K8sEnabled {
-		return j.killK8sJob(db, job)
+		return j.killK8sJob(dedb, job)
 	}
 	return j.killCondorJob(job.ID, job.User)
 
@@ -319,7 +319,7 @@ func (j *JobKiller) killCondorJob(jobID, username string) error {
 
 // killK8sJob uses the app-exposer API to make a job save its outputs and exit.
 // JobID should be the external_id (AKA invocationID) for the job.
-func (j *JobKiller) killK8sJob(db *sql.DB, job *Job) error {
+func (j *JobKiller) killK8sJob(dedb *sql.DB, job *Job) error {
 	var err error
 
 	origAPIURL, err := url.Parse(j.AppExposerBase)
@@ -385,7 +385,7 @@ select jobs.id,
   join job_steps on jobs.id = job_steps.job_id
  where job_steps.external_id = $1`
 
-func lookupByExternalID(db *sql.DB, externalID string) (*Job, error) {
+func lookupByExternalID(dedb *sql.DB, externalID string) (*Job, error) {
 	var (
 		err            error
 		job            *Job
@@ -396,7 +396,7 @@ func lookupByExternalID(db *sql.DB, externalID string) (*Job, error) {
 
 	job = &Job{}
 
-	if err = db.QueryRow(jobByExternalIDQuery, externalID).Scan(
+	if err = dedb.QueryRow(jobByExternalIDQuery, externalID).Scan(
 		&job.ID,
 		&job.AppID,
 		&job.UserID,
@@ -432,10 +432,10 @@ func generateSubdomain(userID, externalID string) string {
 
 const setSubdomainMutation = `update only jobs set subdomain = $1 where id = $2`
 
-func setSubdomain(db *sql.DB, analysisID, subdomain string) error {
+func setSubdomain(dedb *sql.DB, analysisID, subdomain string) error {
 	var err error
 
-	if _, err = db.Exec(setSubdomainMutation, subdomain, analysisID); err != nil {
+	if _, err = dedb.Exec(setSubdomainMutation, subdomain, analysisID); err != nil {
 		return errors.Wrapf(err, "error setting subdomain for job %s to %s", analysisID, subdomain)
 	}
 
@@ -444,7 +444,7 @@ func setSubdomain(db *sql.DB, analysisID, subdomain string) error {
 
 const setPlannedEndDateMutation = `update only jobs set planned_end_date = $1 where id = $2`
 
-func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
+func setPlannedEndDate(dedb *sql.DB, id string, millisSinceEpoch int64) error {
 	var err error
 
 	// Get the time zone offset from UTC in seconds
@@ -462,7 +462,7 @@ func setPlannedEndDate(db *sql.DB, id string, millisSinceEpoch int64) error {
 		Add(addition).
 		Format("2006-01-02 15:04:05.000000-07")
 
-	if _, err = db.Exec(setPlannedEndDateMutation, plannedEndDate, id); err != nil {
+	if _, err = dedb.Exec(setPlannedEndDateMutation, plannedEndDate, id); err != nil {
 		return errors.Wrapf(err, "error setting planned_end_date to %s for job %s", plannedEndDate, id)
 	}
 
@@ -478,14 +478,14 @@ SELECT t.name
     ON s.job_type_id = t.id
  WHERE j.id = $1`
 
-func isInteractive(db *sql.DB, id string) (bool, error) {
+func isInteractive(dedb *sql.DB, id string) (bool, error) {
 	var (
 		err      error
 		rows     *sql.Rows
 		jobTypes []string
 	)
 
-	if rows, err = db.Query(stepTypeQuery, id); err != nil {
+	if rows, err = dedb.Query(stepTypeQuery, id); err != nil {
 		return false, err
 	}
 	defer rows.Close()
@@ -515,12 +515,12 @@ SELECT user_id
  WHERE id = $1
 `
 
-func getUserIDForJob(db *sql.DB, analysisID string) (string, error) {
+func getUserIDForJob(dedb *sql.DB, analysisID string) (string, error) {
 	var (
 		err    error
 		userID string
 	)
-	if err = db.QueryRow(getUserIDQuery, analysisID).Scan(&userID); err != nil {
+	if err = dedb.QueryRow(getUserIDQuery, analysisID).Scan(&userID); err != nil {
 		return "", err
 	}
 	return userID, nil
@@ -529,7 +529,7 @@ func getUserIDForJob(db *sql.DB, analysisID string) (string, error) {
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
-func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
+func CreateMessageHandler(dedb *sql.DB) func(amqp.Delivery) {
 	return func(delivery amqp.Delivery) {
 		var err error
 
@@ -551,13 +551,13 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 		}
 		externalID = update.Job.InvocationID
 
-		analysis, err := lookupByExternalID(db, externalID)
+		analysis, err := lookupByExternalID(dedb, externalID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up analysis by external ID '%s'", externalID))
 			return
 		}
 
-		analysisIsInteractive, err := isInteractive(db, analysis.ID)
+		analysisIsInteractive, err := isInteractive(dedb, analysis.ID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up interactive status for analysis %s", analysis.ID))
 			return
@@ -578,7 +578,7 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 		// Set the subdomain
 		if analysis.Subdomain == "" {
 			// make sure to use analysis.ID, not external ID here.
-			userID, err := getUserIDForJob(db, analysis.ID)
+			userID, err := getUserIDForJob(dedb, analysis.ID)
 			if err != nil {
 				log.Error(errors.Wrapf(err, "error getting userID for job %s", analysis.ID))
 			} else {
@@ -589,7 +589,7 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 
 				log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, externalID)
 
-				if err = setSubdomain(db, analysis.ID, subdomain); err != nil {
+				if err = setSubdomain(dedb, analysis.ID, subdomain); err != nil {
 					log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
 				}
 			}
@@ -611,7 +611,7 @@ func CreateMessageHandler(db *sql.DB) func(amqp.Delivery) {
 		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
 		// then convert back to milliseconds.
 		endDate := time.Unix(0, sdnano).Add(72*time.Hour).UnixNano() / 1000000
-		if err = setPlannedEndDate(db, analysis.ID, endDate); err != nil {
+		if err = setPlannedEndDate(dedb, analysis.ID, endDate); err != nil {
 			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}
 	}
