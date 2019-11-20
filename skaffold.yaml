@@ -1,0 +1,14 @@
+apiVersion: skaffold/v1
+kind: Config
+metadata:
+  name: timelord
+deploy:
+  kubectl:
+    manifests:
+    - k8s/timelord.yml
+build:
+  tagPolicy:
+    gitCommit: {}
+  artifacts:
+  - image: discoenv/timelord
+  local: {}
