@@ -298,22 +298,8 @@ func main() {
 		log.Fatal(errors.Wrapf(err, "error pinging database %s", dbURI))
 	}
 
-	viceDBURI := cfg.GetString("vice.db.uri")
-	if viceDBURI == "" {
-		log.Fatal("vice.db.uri must be set in the config file")
-	}
-
-	vdb, err := sql.Open("postgres", viceDBURI)
-	if err != nil {
-		log.Fatal(errors.Wrapf(err, "error connecting to the vice database %s", viceDBURI))
-	}
-
-	if err = vdb.Ping(); err != nil {
-		log.Fatal(errors.Wrapf(err, "error pinging database %s", viceDBURI))
-	}
-
 	vicedb := &VICEDatabaser{
-		db: vdb,
+		db: db,
 	}
 
 	log.Info("configuring messaging support...")
