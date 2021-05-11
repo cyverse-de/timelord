@@ -32,6 +32,9 @@ iplant_groups:
   user: grouper-user
 `
 
+const warningSentKey = "warningsent"
+const oneDayWarningKey = "onedaywarning"
+
 func sendNotif(j *Job, status, subject, msg string) error {
 	var err error
 
@@ -183,12 +186,12 @@ func sendWarning(db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warni
 			}
 
 			switch warningKey {
-			case "warning-sent-key": // one hour warning
+			case warningSentKey: // one hour warning
 				wasSent = notifStatuses.HourWarningSent
 				failureCount = notifStatuses.HourWarningFailureCount
 				updateWarningSent = vicedb.SetHourWarningSent
 				updateFailureCount = vicedb.SetHourWarningFailureCount
-			case "onedaywarning": // one day warning
+			case oneDayWarningKey: // one day warning
 				wasSent = notifStatuses.DayWarningSent
 				failureCount = notifStatuses.DayWarningFailureCount
 				updateWarningSent = vicedb.SetDayWarningSent
@@ -239,7 +242,7 @@ func main() {
 		appExposerBase  = flag.String("app-exposer", "http://app-exposer", "The base URL for the app-exposer service.")
 		killNotifKey    = flag.String("kill-notif-key", "killnotifsent", "The key for the annotation detailing whether the notification about job termination was sent.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
-		warningSentKey  = flag.String("warning-sent-key", "warningsent", "The key for the annotation detailing whether the job termination warning was sent.")
+		warningSentKey  = flag.String("warning-sent-key", warningSentKey, "The key for the annotation detailing whether the job termination warning was sent.")
 	)
 	flag.Parse()
 
@@ -335,7 +338,7 @@ func main() {
 			sendWarning(db, vicedb, *warningInterval, *warningSentKey)
 
 			// 1 day warning
-			sendWarning(db, vicedb, 1440, "onedaywarning")
+			sendWarning(db, vicedb, 1440, oneDayWarningKey)
 
 			jl, err = JobsToKill(db)
 			if err != nil {
