@@ -43,7 +43,7 @@ spec:
                 path: jobservices.yml
       containers:
       - name: timelord
-        image: discoenv/timelord
+        image: harbor.cyverse.org/de/timelord
         env:
           - name: CLUSTER
             value: "1"

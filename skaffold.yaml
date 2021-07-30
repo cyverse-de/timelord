@@ -10,5 +10,5 @@ build:
   tagPolicy:
     gitCommit: {}
   artifacts:
-  - image: discoenv/timelord
+  - image: harbor.cyverse.org/de/timelord
   local: {}
