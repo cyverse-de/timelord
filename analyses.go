@@ -23,16 +23,6 @@ import (
 // database through the GraphQL server. Shouldn't have timezone info.
 const TimestampFromDBFormat = "2006-01-02T15:04:05"
 
-// JobType contains the system ID for a job.
-type JobType struct {
-	SystemID string `json:"system_id"`
-}
-
-// JobUser contains user information associated with a job.
-type JobUser struct {
-	Username string `json:"username"`
-}
-
 // Job contains the information about an analysis that we're interested in.
 type Job struct {
 	ID             string `json:"id"`

@@ -404,5 +404,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	http.Serve(sock, nil)
+	err = http.Serve(sock, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
