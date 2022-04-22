@@ -18,7 +18,10 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
+
+var httpClient = http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 // TimestampFromDBFormat is the format of the timestamps retrieved from the
 // database through the GraphQL server. Shouldn't have timezone info.
@@ -252,11 +255,11 @@ type JobKiller struct {
 }
 
 // KillJob uses either the apps or app-exposer APIs to kill a VICE job.
-func (j *JobKiller) KillJob(dedb *sql.DB, job *Job) error {
+func (j *JobKiller) KillJob(ctx context.Context, dedb *sql.DB, job *Job) error {
 	if j.K8sEnabled {
-		return j.killK8sJob(dedb, job)
+		return j.killK8sJob(ctx, dedb, job)
 	}
-	return j.killCondorJob(job.ID, job.User)
+	return j.killCondorJob(ctx, job.ID, job.User)
 
 }
 
@@ -264,7 +267,7 @@ func (j *JobKiller) KillJob(dedb *sql.DB, job *Job) error {
 // will probably be to the apps service. jobID should be the UUID for the Job,
 // typically returned in the ID field by the analyses service. The username
 // should be the short username for the user that launched the job.
-func (j *JobKiller) killCondorJob(jobID, username string) error {
+func (j *JobKiller) killCondorJob(ctx context.Context, jobID, username string) error {
 	apiURL, err := url.Parse(j.AppsBase)
 	if err != nil {
 		return err
@@ -272,7 +275,7 @@ func (j *JobKiller) killCondorJob(jobID, username string) error {
 
 	apiURL.Path = filepath.Join(apiURL.Path, "analyses", jobID, "stop")
 
-	req, err := http.NewRequest(http.MethodPost, apiURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -288,8 +291,7 @@ func (j *JobKiller) killCondorJob(jobID, username string) error {
 	q.Add("user", shortusername)
 	req.URL.RawQuery = q.Encode()
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -310,7 +312,7 @@ func (j *JobKiller) killCondorJob(jobID, username string) error {
 
 // killK8sJob uses the app-exposer API to make a job save its outputs and exit.
 // JobID should be the external_id (AKA invocationID) for the job.
-func (j *JobKiller) killK8sJob(dedb *sql.DB, job *Job) error {
+func (j *JobKiller) killK8sJob(ctx context.Context, dedb *sql.DB, job *Job) error {
 	var err error
 
 	origAPIURL, err := url.Parse(j.AppExposerBase)
@@ -328,13 +330,12 @@ func (j *JobKiller) killK8sJob(dedb *sql.DB, job *Job) error {
 
 	apiURL.Path = filepath.Join(apiURL.Path, "vice", externalID, "save-and-exit")
 
-	req, err := http.NewRequest(http.MethodPost, apiURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), nil)
 	if err != nil {
 		return errors.Wrapf(err, "error creating save-and-exit request for external-id %s", externalID)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return errors.Wrapf(err, "error calling save-and-exit for external-id %s", externalID)
 	}

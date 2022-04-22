@@ -345,7 +345,7 @@ func main() {
 		var jl []Job
 
 		for {
-			_, span := otel.Tracer(otelName).Start(context.Background(), "job killer iteration")
+			ctx, span := otel.Tracer(otelName).Start(context.Background(), "job killer iteration")
 
 			// 1 hour warning
 			sendWarning(db, vicedb, *warningInterval, *warningSentKey)
@@ -381,7 +381,7 @@ func main() {
 				}
 
 				if !notifStatuses.KillWarningSent {
-					err = jobKiller.KillJob(db, &j)
+					err = jobKiller.KillJob(ctx, db, &j)
 					if err != nil {
 						log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 					} else {
