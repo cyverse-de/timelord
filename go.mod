@@ -11,4 +11,5 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/viper v1.4.0
 	github.com/streadway/amqp v1.0.1-0.20200716223359-e6b33f460591
+	go.opentelemetry.io/otel v1.6.1
 )

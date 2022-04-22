@@ -19,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel"
 
 	_ "github.com/lib/pq"
 
@@ -26,6 +27,7 @@ import (
 )
 
 const serviceName = "timelord"
+const otelName = "github.com/cyverse-de/timelord"
 
 const defaultConfig = `db:
   uri: "db:5432"
@@ -343,6 +345,8 @@ func main() {
 		var jl []Job
 
 		for {
+			_, span := otel.Tracer(otelName).Start(context.Background(), "job killer iteration")
+
 			// 1 hour warning
 			sendWarning(db, vicedb, *warningInterval, *warningSentKey)
 
@@ -352,6 +356,7 @@ func main() {
 			jl, err = JobsToKill(db)
 			if err != nil {
 				log.Error(errors.Wrap(err, "error getting list of jobs to kill"))
+				span.End()
 				continue
 			}
 
@@ -361,6 +366,7 @@ func main() {
 				if !analysisRecordExists {
 					if _, err = vicedb.AddNotifRecord(&j); err != nil {
 						log.Error(err)
+						span.End()
 						continue
 					}
 				}
@@ -370,6 +376,7 @@ func main() {
 				notifStatuses, err = vicedb.NotifStatuses(&j)
 				if err != nil {
 					log.Error(err)
+					span.End()
 					continue
 				}
 
@@ -390,6 +397,7 @@ func main() {
 
 						if err = vicedb.SetKillWarningFailureCount(&j, notifStatuses.KillWarningFailureCount); err != nil {
 							log.Error(err)
+							span.End()
 							continue
 						}
 					}
@@ -397,12 +405,14 @@ func main() {
 					if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
 						if err = vicedb.SetKillWarningSent(&j, true); err != nil {
 							log.Error(err)
+							span.End()
 							continue
 						}
 					}
 				}
 			}
 
+			span.End()
 			time.Sleep(time.Second * 10)
 		}
 	}()
