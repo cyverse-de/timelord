@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -63,7 +64,7 @@ func TestSend(t *testing.T) {
 
 	n.URI = srv.URL
 
-	resp, err := n.Send()
+	resp, err := n.Send(context.Background())
 	if err != nil {
 		t.Error(err)
 	}

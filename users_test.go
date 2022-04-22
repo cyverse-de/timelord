@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -62,7 +63,7 @@ func TestGet(t *testing.T) {
 
 	actual := NewUser("id")
 	actual.URI = srv.URL
-	err := actual.Get()
+	err := actual.Get(context.Background())
 	if err != nil {
 		t.Error(err)
 	}
