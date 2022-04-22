@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -14,14 +15,17 @@ import (
 	_ "expvar"
 
 	"github.com/cyverse-de/configurate"
+	"github.com/cyverse-de/go-mod/otelutils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	_ "github.com/lib/pq"
 
-	"gopkg.in/cyverse-de/messaging.v4"
+	"github.com/cyverse-de/messaging/v9"
 )
+
+const serviceName = "timelord"
 
 const defaultConfig = `db:
   uri: "db:5432"
@@ -250,6 +254,11 @@ func main() {
 	if cfg, err = configurate.InitDefaults(*configPath, defaultConfig); err != nil {
 		log.Fatal(err)
 	}
+
+	var tracerCtx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	shutdown := otelutils.TracerProviderFromEnv(tracerCtx, serviceName, func(e error) { log.Fatal(e) })
+	defer shutdown()
 
 	log.Info("configuring notification support...")
 	// configure the notification emitters

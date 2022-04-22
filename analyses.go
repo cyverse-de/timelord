@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
@@ -12,11 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cyverse-de/messaging/v9"
 	pq "github.com/lib/pq"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
-	"gopkg.in/cyverse-de/messaging.v4"
 )
 
 // TimestampFromDBFormat is the format of the timestamps retrieved from the
@@ -519,8 +520,8 @@ func getUserIDForJob(dedb *sql.DB, analysisID string) (string, error) {
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
-func CreateMessageHandler(dedb *sql.DB) func(amqp.Delivery) {
-	return func(delivery amqp.Delivery) {
+func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
+	return func(ctx context.Context, delivery amqp.Delivery) {
 		var err error
 
 		if err = delivery.Ack(false); err != nil {

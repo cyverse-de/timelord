@@ -1,5 +1,5 @@
 ### First stage
-FROM golang:1.12 as build-root
+FROM golang:1.16 as build-root
 
 RUN go get -u github.com/jstemmer/go-junit-report
 
