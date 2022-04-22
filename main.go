@@ -20,6 +20,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 
 	_ "github.com/lib/pq"
@@ -29,6 +30,8 @@ import (
 
 const serviceName = "timelord"
 const otelName = "github.com/cyverse-de/timelord"
+
+var httpClient = http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 const defaultConfig = `db:
   uri: "db:5432"
@@ -42,7 +45,7 @@ iplant_groups:
 const warningSentKey = "warningsent"
 const oneDayWarningKey = "onedaywarning"
 
-func sendNotif(j *Job, status, subject, msg string) error {
+func sendNotif(ctx context.Context, j *Job, status, subject, msg string) error {
 	var err error
 
 	// Don't send notification if things aren't configured correctly. It's
@@ -54,7 +57,7 @@ func sendNotif(j *Job, status, subject, msg string) error {
 
 	// We need to get the user's email address from the iplant-groups service.
 	user := NewUser(ParseID(j.User))
-	if err = user.Get(); err != nil {
+	if err = user.Get(ctx); err != nil {
 		return errors.Wrap(err, "failed to get user info")
 	}
 
@@ -76,7 +79,7 @@ func sendNotif(j *Job, status, subject, msg string) error {
 
 	notif := NewNotification(u, subject, msg, p)
 
-	resp, err := notif.Send()
+	resp, err := notif.Send(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to send notification")
 	}
@@ -120,7 +123,7 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 
 // SendKillNotification sends a notification to the user telling them that
 // their job has been killed.
-func SendKillNotification(j *Job, killNotifKey string) error {
+func SendKillNotification(ctx context.Context, j *Job, killNotifKey string) error {
 	subject := fmt.Sprintf(KillSubjectFormat, j.Name)
 	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
 	if err != nil {
@@ -134,13 +137,13 @@ func SendKillNotification(j *Job, killNotifKey string) error {
 		endtime.UTC().Format(time.UnixDate),
 		j.ResultFolder,
 	)
-	err = sendNotif(j, "Canceled", subject, msg)
+	err = sendNotif(ctx, j, "Canceled", subject, msg)
 	return err
 }
 
 // SendWarningNotification sends a notification to the user telling them that
 // their job will be killed in the near future.
-func SendWarningNotification(j *Job) error {
+func SendWarningNotification(ctx context.Context, j *Job) error {
 	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
@@ -158,7 +161,7 @@ func SendWarningNotification(j *Job) error {
 		j.ResultFolder,
 	)
 
-	return sendNotif(j, j.Status, subject, msg)
+	return sendNotif(ctx, j, j.Status, subject, msg)
 }
 
 const maxAttempts = 3
@@ -215,7 +218,7 @@ func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warning
 			log.Warnf("external ID %s has been warned of possible termination: %v", j.ExternalID, wasSent)
 
 			if !wasSent {
-				if err = SendWarningNotification(&j); err != nil {
+				if err = SendWarningNotification(ctx, &j); err != nil {
 					log.Error(errors.Wrapf(err, "error sending warning notification for analysis %s", j.ExternalID))
 
 					failureCount = failureCount + 1
@@ -388,7 +391,7 @@ func main() {
 						log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 					} else {
 
-						err = SendKillNotification(&j, *killNotifKey)
+						err = SendKillNotification(ctx, &j, *killNotifKey)
 						if err != nil {
 							log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
 						}

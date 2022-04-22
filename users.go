@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -42,7 +43,7 @@ func NewUser(id string) *User {
 
 // Get populates the *User with information. Blocks and makes calls to at least
 // the iplant-groups service.
-func (u *User) Get() error {
+func (u *User) Get(ctx context.Context) error {
 	url, err := url.Parse(u.URI)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse user lookup URL")
@@ -50,7 +51,12 @@ func (u *User) Get() error {
 
 	url.Path = fmt.Sprintf("/subjects/%s", u.ID)
 
-	resp, err := http.Get(url.String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url.String(), nil)
+	if err != nil {
+		return errors.Wrapf(err, "failed to GET user information from %s", url.String())
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return errors.Wrapf(err, "failed to GET user information from %s", url.String())
 	}

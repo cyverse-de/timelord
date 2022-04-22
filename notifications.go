@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -83,13 +84,19 @@ func NewNotification(user, subject, msg string, payload *Payload) *Notification 
 }
 
 // Send POSTs the notification to the URI.
-func (n *Notification) Send() (*http.Response, error) {
+func (n *Notification) Send(ctx context.Context) (*http.Response, error) {
 	msg, err := json.Marshal(n)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal message for user %s with subject '%s'", n.User, n.Subject)
 	}
 
-	resp, err := http.Post(n.URI, "application/json", bytes.NewBuffer(msg))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.URI, bytes.NewBuffer(msg))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to post notification")
+	}
+	req.Header.Set("content-type", "application/json")
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to post notification")
 	}

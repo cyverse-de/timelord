@@ -18,10 +18,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
-
-var httpClient = http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 // TimestampFromDBFormat is the format of the timestamps retrieved from the
 // database through the GraphQL server. Shouldn't have timezone info.
