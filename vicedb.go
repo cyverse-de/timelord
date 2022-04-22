@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 
 	log "github.com/sirupsen/logrus"
@@ -37,7 +38,7 @@ const notifStatusQuery = `
 `
 
 // NotifStatuses returns a filled out *NotifStatuses or nothing at all.
-func (v *VICEDatabaser) NotifStatuses(job *Job) (*NotifStatuses, error) {
+func (v *VICEDatabaser) NotifStatuses(ctx context.Context, job *Job) (*NotifStatuses, error) {
 	var (
 		err           error
 		notifStatuses *NotifStatuses
@@ -45,7 +46,8 @@ func (v *VICEDatabaser) NotifStatuses(job *Job) (*NotifStatuses, error) {
 
 	notifStatuses = &NotifStatuses{}
 
-	if err = v.db.QueryRow(
+	if err = v.db.QueryRowContext(
+		ctx,
 		notifStatusQuery,
 		job.ID,
 	).Scan(
@@ -71,14 +73,15 @@ select id
 `
 
 // AnalysisRecordExists checks whether the given analysisID is already in the database or not.
-func (v *VICEDatabaser) AnalysisRecordExists(analysisID string) bool {
+func (v *VICEDatabaser) AnalysisRecordExists(ctx context.Context, analysisID string) bool {
 	var (
 		err     error
 		row     *sql.Row
 		notifID string
 	)
 
-	row = v.db.QueryRow(
+	row = v.db.QueryRowContext(
+		ctx,
 		getNotifStatusIDQuery,
 		analysisID,
 	)
@@ -95,13 +98,14 @@ insert into notif_statuses (analysis_id, external_id) values ($1, $2) returning 
 
 // AddNotifRecord adds a new record to the notif_statuses table for the provided analysis.
 // Returns the ID of the new record.
-func (v *VICEDatabaser) AddNotifRecord(job *Job) (string, error) {
+func (v *VICEDatabaser) AddNotifRecord(ctx context.Context, job *Job) (string, error) {
 	var (
 		err     error
 		notifID string
 	)
 
-	if err = v.db.QueryRow(
+	if err = v.db.QueryRowContext(
+		ctx,
 		addNotifRecordQuery,
 		job.ID,
 		job.ExternalID,
@@ -118,13 +122,14 @@ select hour_warning_sent
 `
 
 // HourWarningSent returns true if the 1-hour warning was already sent for the analysis.
-func (v *VICEDatabaser) HourWarningSent(job *Job) (bool, error) {
+func (v *VICEDatabaser) HourWarningSent(ctx context.Context, job *Job) (bool, error) {
 	var (
 		err     error
 		wasSent bool
 	)
 
-	if err = v.db.QueryRow(
+	if err = v.db.QueryRowContext(
+		ctx,
 		getHourWarningQuery,
 		job.ID,
 	).Scan(&wasSent); err != nil {
@@ -140,13 +145,14 @@ select day_warning_sent
 `
 
 // DayWarningSent returns true if the 1-day warning was already sent for the analysis.
-func (v *VICEDatabaser) DayWarningSent(job *Job) (bool, error) {
+func (v *VICEDatabaser) DayWarningSent(ctx context.Context, job *Job) (bool, error) {
 	var (
 		err     error
 		wasSent bool
 	)
 
-	if err = v.db.QueryRow(
+	if err = v.db.QueryRowContext(
+		ctx,
 		getDayWarningQuery,
 		job.ID,
 	).Scan(&wasSent); err != nil {
@@ -163,13 +169,14 @@ select kill_warning_sent
 `
 
 // KillWarningSent returns true if the job termination warning was already sent for the analyis.
-func (v *VICEDatabaser) KillWarningSent(job *Job) (bool, error) {
+func (v *VICEDatabaser) KillWarningSent(ctx context.Context, job *Job) (bool, error) {
 	var (
 		err     error
 		wasSent bool
 	)
 
-	if err = v.db.QueryRow(
+	if err = v.db.QueryRowContext(
+		ctx,
 		getKillWarningQuery,
 		job.ID,
 	).Scan(&wasSent); err != nil {
@@ -185,10 +192,11 @@ update notif_statuses set day_warning_sent = $1 where analysis_id = $2
 
 // SetDayWarningSent sets the day_warning_sent field to the value of wasSent in the
 // record for the analysis represented by job.
-func (v *VICEDatabaser) SetDayWarningSent(job *Job, wasSent bool) error {
+func (v *VICEDatabaser) SetDayWarningSent(ctx context.Context, job *Job, wasSent bool) error {
 	var err error
 
-	_, err = v.db.Exec(
+	_, err = v.db.ExecContext(
+		ctx,
 		setDayWarningSentQuery,
 		wasSent,
 		job.ID,
@@ -201,10 +209,11 @@ update notif_statuses set day_warning_failure_count = $1 where analysis_id = $2
 `
 
 // SetDayWarningFailureCount sets the new value for the kill_warning_failure_count field.
-func (v *VICEDatabaser) SetDayWarningFailureCount(job *Job, failureCount int) error {
+func (v *VICEDatabaser) SetDayWarningFailureCount(ctx context.Context, job *Job, failureCount int) error {
 	var err error
 
-	_, err = v.db.Exec(
+	_, err = v.db.ExecContext(
+		ctx,
 		setDayWarningFailureCountQuery,
 		failureCount,
 		job.ID,
@@ -218,10 +227,11 @@ update notif_statuses set hour_warning_sent = $1 where analysis_id = $2
 
 // SetHourWarningSent sets the hour_warning_sent field to the value of wasSent in the
 // record for the analysis represented by job.
-func (v *VICEDatabaser) SetHourWarningSent(job *Job, wasSent bool) error {
+func (v *VICEDatabaser) SetHourWarningSent(ctx context.Context, job *Job, wasSent bool) error {
 	var err error
 
-	_, err = v.db.Exec(
+	_, err = v.db.ExecContext(
+		ctx,
 		setHourWarningSentQuery,
 		wasSent,
 		job.ID,
@@ -234,10 +244,11 @@ update notif_statuses set hour_warning_failure_count = $1 where analysis_id = $2
 `
 
 // SetHourWarningFailureCount sets the new value for the kill_warning_failure_count field.
-func (v *VICEDatabaser) SetHourWarningFailureCount(job *Job, failureCount int) error {
+func (v *VICEDatabaser) SetHourWarningFailureCount(ctx context.Context, job *Job, failureCount int) error {
 	var err error
 
-	_, err = v.db.Exec(
+	_, err = v.db.ExecContext(
+		ctx,
 		setHourWarningFailureCountQuery,
 		failureCount,
 		job.ID,
@@ -251,10 +262,11 @@ update notif_statuses set kill_warning_sent = $1 where analysis_id = $2
 
 // SetKillWarningSent sets the kill_warning_sent field to the value of wasSent in the
 // record for the analysis represented by job.
-func (v *VICEDatabaser) SetKillWarningSent(job *Job, wasSent bool) error {
+func (v *VICEDatabaser) SetKillWarningSent(ctx context.Context, job *Job, wasSent bool) error {
 	var err error
 
-	_, err = v.db.Exec(
+	_, err = v.db.ExecContext(
+		ctx,
 		setKillWarningSentQuery,
 		wasSent,
 		job.ID,
@@ -267,10 +279,11 @@ update notif_statuses set kill_warning_failure_count = $1 where analysis_id = $2
 `
 
 // SetKillWarningFailureCount sets the new value for the kill_warning_failure_count field.
-func (v *VICEDatabaser) SetKillWarningFailureCount(job *Job, failureCount int) error {
+func (v *VICEDatabaser) SetKillWarningFailureCount(ctx context.Context, job *Job, failureCount int) error {
 	var err error
 
-	_, err = v.db.Exec(
+	_, err = v.db.ExecContext(
+		ctx,
 		setKillWarningFailureCountQuery,
 		failureCount,
 		job.ID,

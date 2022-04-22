@@ -15,6 +15,7 @@ import (
 	_ "expvar"
 
 	"github.com/cyverse-de/configurate"
+	"github.com/cyverse-de/dbutil"
 	"github.com/cyverse-de/go-mod/otelutils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -162,8 +163,8 @@ func SendWarningNotification(j *Job) error {
 
 const maxAttempts = 3
 
-func sendWarning(db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
-	jobs, err := JobKillWarnings(db, warningInterval)
+func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
+	jobs, err := JobKillWarnings(ctx, db, warningInterval)
 	if err != nil {
 		log.Error(err)
 	} else {
@@ -172,20 +173,20 @@ func sendWarning(db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warni
 				wasSent            bool
 				notifStatuses      *NotifStatuses
 				failureCount       int
-				updateWarningSent  func(*Job, bool) error
-				updateFailureCount func(*Job, int) error
+				updateWarningSent  func(context.Context, *Job, bool) error
+				updateFailureCount func(context.Context, *Job, int) error
 			)
 
-			analysisRecordExists := vicedb.AnalysisRecordExists(j.ID)
+			analysisRecordExists := vicedb.AnalysisRecordExists(ctx, j.ID)
 
 			if !analysisRecordExists {
-				if _, err = vicedb.AddNotifRecord(&j); err != nil {
+				if _, err = vicedb.AddNotifRecord(ctx, &j); err != nil {
 					log.Error(err)
 					continue
 				}
 			}
 
-			notifStatuses, err = vicedb.NotifStatuses(&j)
+			notifStatuses, err = vicedb.NotifStatuses(ctx, &j)
 			if err != nil {
 				log.Error(err)
 				continue
@@ -219,13 +220,13 @@ func sendWarning(db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warni
 
 					failureCount = failureCount + 1
 
-					if err = updateFailureCount(&j, failureCount); err != nil {
+					if err = updateFailureCount(ctx, &j, failureCount); err != nil {
 						log.Error(err)
 					}
 				}
 
 				if err == nil || failureCount >= maxAttempts {
-					if err = updateWarningSent(&j, true); err != nil {
+					if err = updateWarningSent(ctx, &j, true); err != nil {
 						log.Error(err)
 						continue
 					}
@@ -303,13 +304,14 @@ func main() {
 		log.Fatal("db.uri must be set in the config file")
 	}
 
-	db, err := sql.Open("postgres", dbURI)
+	connector, err := dbutil.NewDefaultConnector("1m")
 	if err != nil {
 		log.Fatal(errors.Wrapf(err, "error connecting to database %s", dbURI))
 	}
 
-	if err = db.Ping(); err != nil {
-		log.Fatal(errors.Wrapf(err, "error pinging database %s", dbURI))
+	db, err := connector.Connect("postgres", dbURI)
+	if err != nil {
+		log.Fatal(errors.Wrapf(err, "error connecting to database %s", dbURI))
 	}
 
 	vicedb := &VICEDatabaser{
@@ -348,12 +350,12 @@ func main() {
 			ctx, span := otel.Tracer(otelName).Start(context.Background(), "job killer iteration")
 
 			// 1 hour warning
-			sendWarning(db, vicedb, *warningInterval, *warningSentKey)
+			sendWarning(ctx, db, vicedb, *warningInterval, *warningSentKey)
 
 			// 1 day warning
-			sendWarning(db, vicedb, 1440, oneDayWarningKey)
+			sendWarning(ctx, db, vicedb, 1440, oneDayWarningKey)
 
-			jl, err = JobsToKill(db)
+			jl, err = JobsToKill(ctx, db)
 			if err != nil {
 				log.Error(errors.Wrap(err, "error getting list of jobs to kill"))
 				span.End()
@@ -361,10 +363,10 @@ func main() {
 			}
 
 			for _, j := range jl {
-				analysisRecordExists := vicedb.AnalysisRecordExists(j.ID)
+				analysisRecordExists := vicedb.AnalysisRecordExists(ctx, j.ID)
 
 				if !analysisRecordExists {
-					if _, err = vicedb.AddNotifRecord(&j); err != nil {
+					if _, err = vicedb.AddNotifRecord(ctx, &j); err != nil {
 						log.Error(err)
 						span.End()
 						continue
@@ -373,7 +375,7 @@ func main() {
 
 				var notifStatuses *NotifStatuses
 
-				notifStatuses, err = vicedb.NotifStatuses(&j)
+				notifStatuses, err = vicedb.NotifStatuses(ctx, &j)
 				if err != nil {
 					log.Error(err)
 					span.End()
@@ -395,7 +397,7 @@ func main() {
 					if err != nil {
 						notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
 
-						if err = vicedb.SetKillWarningFailureCount(&j, notifStatuses.KillWarningFailureCount); err != nil {
+						if err = vicedb.SetKillWarningFailureCount(ctx, &j, notifStatuses.KillWarningFailureCount); err != nil {
 							log.Error(err)
 							span.End()
 							continue
@@ -403,7 +405,7 @@ func main() {
 					}
 
 					if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
-						if err = vicedb.SetKillWarningSent(&j, true); err != nil {
+						if err = vicedb.SetKillWarningSent(ctx, &j, true); err != nil {
 							log.Error(err)
 							span.End()
 							continue

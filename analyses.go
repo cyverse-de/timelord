@@ -68,14 +68,15 @@ select job_steps.external_id
  where job_steps.job_id = $1
  limit 1`
 
-func getExternalID(dedb *sql.DB, jobID string) (string, error) {
+func getExternalID(ctx context.Context, dedb *sql.DB, jobID string) (string, error) {
 	var (
 		err        error
 		row        *sql.Row
 		externalID string
 	)
 
-	row = dedb.QueryRow(
+	row = dedb.QueryRowContext(
+		ctx,
 		externalIDsQuery,
 		jobID,
 	)
@@ -88,13 +89,14 @@ func getExternalID(dedb *sql.DB, jobID string) (string, error) {
 
 // JobsToKill returns a list of running jobs that are past their expiration date
 // and can be killed off. 'api' should be the base URL for the analyses service.
-func JobsToKill(dedb *sql.DB) ([]Job, error) {
+func JobsToKill(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 	var (
 		err  error
 		rows *sql.Rows
 	)
 
-	if rows, err = dedb.Query(
+	if rows, err = dedb.QueryContext(
+		ctx,
 		jobsToKillQuery,
 		"Running",
 		time.Now().Format("2006-01-02 15:04:05.000000-07"),
@@ -138,7 +140,7 @@ func JobsToKill(dedb *sql.DB) ([]Job, error) {
 			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
 		}
 
-		job.ExternalID, err = getExternalID(dedb, job.ID)
+		job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -176,7 +178,7 @@ select jobs.id,
 // JobKillWarnings returns a list of running jobs that are set to be killed
 // within the number of minutes specified. 'api' should be the base URL for the
 // analyses service.
-func JobKillWarnings(dedb *sql.DB, minutes int64) ([]Job, error) {
+func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, error) {
 	var (
 		err  error
 		rows *sql.Rows
@@ -187,7 +189,8 @@ func JobKillWarnings(dedb *sql.DB, minutes int64) ([]Job, error) {
 	// nowtimestamp := now.Format(fmtstring)
 	// futuretimestamp := now.Add(time.Duration(minutes) * time.Minute).Format(fmtstring)
 
-	if rows, err = dedb.Query(
+	if rows, err = dedb.QueryContext(
+		ctx,
 		jobWarningsQuery,
 		"Running",
 		now,
@@ -232,7 +235,7 @@ func JobKillWarnings(dedb *sql.DB, minutes int64) ([]Job, error) {
 			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
 		}
 
-		job.ExternalID, err = getExternalID(dedb, job.ID)
+		job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -377,7 +380,7 @@ select jobs.id,
   join job_steps on jobs.id = job_steps.job_id
  where job_steps.external_id = $1`
 
-func lookupByExternalID(dedb *sql.DB, externalID string) (*Job, error) {
+func lookupByExternalID(ctx context.Context, dedb *sql.DB, externalID string) (*Job, error) {
 	var (
 		err            error
 		job            *Job
@@ -388,7 +391,7 @@ func lookupByExternalID(dedb *sql.DB, externalID string) (*Job, error) {
 
 	job = &Job{}
 
-	if err = dedb.QueryRow(jobByExternalIDQuery, externalID).Scan(
+	if err = dedb.QueryRowContext(ctx, jobByExternalIDQuery, externalID).Scan(
 		&job.ID,
 		&job.AppID,
 		&job.UserID,
@@ -424,10 +427,10 @@ func generateSubdomain(userID, externalID string) string {
 
 const setSubdomainMutation = `update only jobs set subdomain = $1 where id = $2`
 
-func setSubdomain(dedb *sql.DB, analysisID, subdomain string) error {
+func setSubdomain(ctx context.Context, dedb *sql.DB, analysisID, subdomain string) error {
 	var err error
 
-	if _, err = dedb.Exec(setSubdomainMutation, subdomain, analysisID); err != nil {
+	if _, err = dedb.ExecContext(ctx, setSubdomainMutation, subdomain, analysisID); err != nil {
 		return errors.Wrapf(err, "error setting subdomain for job %s to %s", analysisID, subdomain)
 	}
 
@@ -436,7 +439,7 @@ func setSubdomain(dedb *sql.DB, analysisID, subdomain string) error {
 
 const setPlannedEndDateMutation = `update only jobs set planned_end_date = $1 where id = $2`
 
-func setPlannedEndDate(dedb *sql.DB, id string, millisSinceEpoch int64) error {
+func setPlannedEndDate(ctx context.Context, dedb *sql.DB, id string, millisSinceEpoch int64) error {
 	var err error
 
 	// Get the time zone offset from UTC in seconds
@@ -454,7 +457,7 @@ func setPlannedEndDate(dedb *sql.DB, id string, millisSinceEpoch int64) error {
 		Add(addition).
 		Format("2006-01-02 15:04:05.000000-07")
 
-	if _, err = dedb.Exec(setPlannedEndDateMutation, plannedEndDate, id); err != nil {
+	if _, err = dedb.ExecContext(ctx, setPlannedEndDateMutation, plannedEndDate, id); err != nil {
 		return errors.Wrapf(err, "error setting planned_end_date to %s for job %s", plannedEndDate, id)
 	}
 
@@ -470,14 +473,14 @@ SELECT t.name
     ON s.job_type_id = t.id
  WHERE j.id = $1`
 
-func isInteractive(dedb *sql.DB, id string) (bool, error) {
+func isInteractive(ctx context.Context, dedb *sql.DB, id string) (bool, error) {
 	var (
 		err      error
 		rows     *sql.Rows
 		jobTypes []string
 	)
 
-	if rows, err = dedb.Query(stepTypeQuery, id); err != nil {
+	if rows, err = dedb.QueryContext(ctx, stepTypeQuery, id); err != nil {
 		return false, err
 	}
 	defer rows.Close()
@@ -507,12 +510,12 @@ SELECT user_id
  WHERE id = $1
 `
 
-func getUserIDForJob(dedb *sql.DB, analysisID string) (string, error) {
+func getUserIDForJob(ctx context.Context, dedb *sql.DB, analysisID string) (string, error) {
 	var (
 		err    error
 		userID string
 	)
-	if err = dedb.QueryRow(getUserIDQuery, analysisID).Scan(&userID); err != nil {
+	if err = dedb.QueryRowContext(ctx, getUserIDQuery, analysisID).Scan(&userID); err != nil {
 		return "", err
 	}
 	return userID, nil
@@ -543,13 +546,13 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 		}
 		externalID = update.Job.InvocationID
 
-		analysis, err := lookupByExternalID(dedb, externalID)
+		analysis, err := lookupByExternalID(ctx, dedb, externalID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up analysis by external ID '%s'", externalID))
 			return
 		}
 
-		analysisIsInteractive, err := isInteractive(dedb, analysis.ID)
+		analysisIsInteractive, err := isInteractive(ctx, dedb, analysis.ID)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "error looking up interactive status for analysis %s", analysis.ID))
 			return
@@ -570,7 +573,7 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 		// Set the subdomain
 		if analysis.Subdomain == "" {
 			// make sure to use analysis.ID, not external ID here.
-			userID, err := getUserIDForJob(dedb, analysis.ID)
+			userID, err := getUserIDForJob(ctx, dedb, analysis.ID)
 			if err != nil {
 				log.Error(errors.Wrapf(err, "error getting userID for job %s", analysis.ID))
 			} else {
@@ -581,7 +584,7 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 
 				log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, externalID)
 
-				if err = setSubdomain(dedb, analysis.ID, subdomain); err != nil {
+				if err = setSubdomain(ctx, dedb, analysis.ID, subdomain); err != nil {
 					log.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
 				}
 			}
@@ -603,7 +606,7 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
 		// then convert back to milliseconds.
 		endDate := time.Unix(0, sdnano).Add(72*time.Hour).UnixNano() / 1000000
-		if err = setPlannedEndDate(dedb, analysis.ID, endDate); err != nil {
+		if err = setPlannedEndDate(ctx, dedb, analysis.ID, endDate); err != nil {
 			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}
 	}
