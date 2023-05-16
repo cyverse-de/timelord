@@ -280,7 +280,7 @@ func main() {
 	}
 	log.Info("done configuring user lookups")
 
-	var k8sEnabled = false
+	var k8sEnabled bool
 	if cfg.InConfig("vice.k8s-enabled") {
 		k8sEnabled = cfg.GetBool("vice.k8s-enabled")
 	} else {
