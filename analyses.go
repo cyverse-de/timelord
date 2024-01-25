@@ -518,6 +518,28 @@ func getUserIDForJob(ctx context.Context, dedb *sql.DB, analysisID string) (stri
 	return userID, nil
 }
 
+// getTimeLimitQuery is the query for calculating a number-of-seconds time limit for a job
+// if a time_limit_seconds is not set for a tool, use 72 hours (72 * 60 * 60 = 259200)
+const getTimeLimitQuery = `
+SELECT sum(CASE WHEN tools.time_limit_seconds > 0 THEN tools.time_limit_seconds ELSE 259200 END)
+  FROM tools
+  JOIN tasks ON tools.id = tasks.tool_id
+  JOIN app_steps ON tasks.id = app_steps.task_id
+  JOIN jobs ON jobs.app_version_id = app_steps.app_version_id
+ WHERE jobs.id = ?
+`
+
+func getTimeLimit(ctx context.Context, dedb *sql.DB, analysisID string) (int64, error) {
+	var (
+		err              error
+		timeLimitSeconds int64
+	)
+	if err = dedb.QueryRowContext(ctx, getTimeLimitQuery, analysisID).Scan(&timeLimitSeconds); err != nil {
+		return 0, err
+	}
+	return timeLimitSeconds, nil
+}
+
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
@@ -600,9 +622,15 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 		}
 		sdnano := startDate.UnixNano()
 
-		// StartDate is in milliseconds, so convert it to nanoseconds, add 48 hours,
+		timeLimitSeconds, err := getTimeLimit(ctx, dedb, analysis.ID)
+		if err != nil {
+			log.Error(errors.Wrapf(err, "error fetching time limit for analysis %s", analysis.ID))
+			return
+		}
+
+		// StartDate is in milliseconds, so convert it to nanoseconds, add correct number of seconds,
 		// then convert back to milliseconds.
-		endDate := time.Unix(0, sdnano).Add(72*time.Hour).UnixNano() / 1000000
+		endDate := time.Unix(0, sdnano).Add(timeLimitSeconds*time.Second).UnixNano() / 1000000
 		if err = setPlannedEndDate(ctx, dedb, analysis.ID, endDate); err != nil {
 			log.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
 		}
