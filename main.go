@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -84,7 +84,7 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string) error {
 		return errors.Wrap(err, "failed to send notification")
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return errors.Wrap(err, "failed to read notification response body")
 	}

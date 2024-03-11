@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -301,7 +301,7 @@ func (j *JobKiller) killCondorJob(ctx context.Context, jobID, username string) e
 		return fmt.Errorf("response status code for POST %s was %d as %s", apiURL.String(), resp.StatusCode, username)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -345,7 +345,7 @@ func (j *JobKiller) killK8sJob(ctx context.Context, dedb *sql.DB, job *Job) erro
 		return fmt.Errorf("response status code for POST %s was %d", apiURL.String(), resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return errors.Wrapf(err, "error reading response body of save-and-exit call for external-id %s", externalID)
 	}
