@@ -1,7 +1,5 @@
 ### First stage
-FROM golang:1.16 as build-root
-
-RUN go get -u github.com/jstemmer/go-junit-report
+FROM golang:1.21 as build-root
 
 WORKDIR /build
 
@@ -17,13 +15,11 @@ ENV GOOS=linux
 ENV GOARCH=amd64
 
 RUN go build -ldflags "-X main.appver=$version -X main.gitref=$git_commit" ./...
-RUN sh -c "go test -v | tee /dev/stderr | go-junit-report > test-results.xml"
 
 ## Second stage
 FROM scratch
 
 COPY --from=build-root /build/timelord /
-COPY --from=build-root /build/test-results.xml /
 
 ENTRYPOINT ["/timelord"]
 
