@@ -71,9 +71,11 @@ spec:
           requests:
             cpu: "1m"
             memory: "128Mi"
+            ephemeral-storage: "1Gi"
           limits:
             cpu: "100m"
             memory: "256Mi"
+            ephemeral-storage: "1Gi"
         ports:
           - name: listen-port
             containerPort: 60000
