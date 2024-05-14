@@ -526,7 +526,7 @@ SELECT sum(CASE WHEN tools.time_limit_seconds > 0 THEN tools.time_limit_seconds 
   JOIN tasks ON tools.id = tasks.tool_id
   JOIN app_steps ON tasks.id = app_steps.task_id
   JOIN jobs ON jobs.app_version_id = app_steps.app_version_id
- WHERE jobs.id = ?
+ WHERE jobs.id = $1
 `
 
 func getTimeLimit(ctx context.Context, dedb *sql.DB, analysisID string) (int64, error) {
