@@ -37,6 +37,20 @@ Please finish any work that is in progress. Output files will be transferred to 
 // to users when their job is going to terminate in the near future.
 const WarningSubjectFormat = "Analysis %s will terminate on %s (%s)."
 
+// PeriodicMessageFormat is the parameterized message that gets sent to users
+// when it's time to send a regular reminder the job is still running
+// parameters: analysis name & ID, start date, duration
+const PeriodicMessageFormat = `Analysis "%s" (%s) is still running.
+
+This is a regularly scheduled reminder message to ensure you don't use up your quota.
+
+This job has been running since %s (%s).`
+
+// PeriodicSubjectFormat is the parameterized subject for the email that is sent
+// to users as a regular reminder of a running job
+// parameters: analysis name, start date, duration
+const PeriodicSubjectFormat = `Analysis %s is running since %s (%s)`
+
 // Notification is a message intended as a notification to some upstream service
 // or the DE UI.
 type Notification struct {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -22,6 +23,8 @@ type NotifStatuses struct {
 	DayWarningFailureCount  int
 	KillWarningSent         bool
 	KillWarningFailureCount int
+	LastPeriodicWarning     time.Time
+	PeriodicWarningPeriod   int
 }
 
 const notifStatusQuery = `
@@ -32,7 +35,9 @@ const notifStatusQuery = `
 		   day_warning_sent,
 		   day_warning_failure_count,
 		   kill_warning_sent,
-		   kill_warning_failure_count
+		   kill_warning_failure_count,
+		   coalesce(last_periodic_warning, '1970-01-01 00:00:00') as last_periodic_warning,
+		   coalesce(periodic_warning_period, 0) as periodic_warning_period
 	  from notif_statuses
 	 where analysis_id = $1
 `
@@ -59,6 +64,8 @@ func (v *VICEDatabaser) NotifStatuses(ctx context.Context, job *Job) (*NotifStat
 		&notifStatuses.DayWarningFailureCount,
 		&notifStatuses.KillWarningSent,
 		&notifStatuses.KillWarningFailureCount,
+		&notifStatuses.LastPeriodicWarning,
+		&notifStatuses.PeriodicWarningPeriod,
 	); err != nil {
 		return nil, err
 	}
@@ -93,7 +100,7 @@ func (v *VICEDatabaser) AnalysisRecordExists(ctx context.Context, analysisID str
 }
 
 const addNotifRecordQuery = `
-insert into notif_statuses (analysis_id, external_id) values ($1, $2) returning id
+insert into notif_statuses (analysis_id, external_id, periodic_warning_period) values ($1, $2, $3) returning id
 `
 
 // AddNotifRecord adds a new record to the notif_statuses table for the provided analysis.
@@ -109,6 +116,7 @@ func (v *VICEDatabaser) AddNotifRecord(ctx context.Context, job *Job) (string, e
 		addNotifRecordQuery,
 		job.ID,
 		job.ExternalID,
+		14400, // 4 hours
 	).Scan(&notifID); err != nil {
 		return "", err
 	}
@@ -286,6 +294,22 @@ func (v *VICEDatabaser) SetKillWarningFailureCount(ctx context.Context, job *Job
 		ctx,
 		setKillWarningFailureCountQuery,
 		failureCount,
+		job.ID,
+	)
+	return err
+}
+
+const updateLastPeriodicWarningQuery = `
+update notif_statuses set last_periodic_warning = $1 where analysis_id = $2
+`
+
+// UpdateLastPeriodicWarning updates the timestamp for a job's last periodic warning
+func (v *VICEDatabaser) UpdateLastPeriodicWarning(ctx context.Context, job *Job, ts time.Time) error {
+	var err error
+	_, err = v.db.ExecContext(
+		ctx,
+		updateLastPeriodicWarningQuery,
+		ts,
 		job.ID,
 	)
 	return err

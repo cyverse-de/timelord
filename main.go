@@ -164,6 +164,40 @@ func SendWarningNotification(ctx context.Context, j *Job) error {
 	return sendNotif(ctx, j, j.Status, subject, msg)
 }
 
+func SendPeriodicNotification(ctx context.Context, j *Job) error {
+	starttime, err := time.Parse(TimestampFromDBFormat, j.StartDate)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse start date %s", j.StartDate)
+	}
+	dur := time.Since(starttime)
+
+	subject := fmt.Sprintf(PeriodicSubjectFormat, j.Name, starttime, dur)
+
+	msg := fmt.Sprintf(
+		PeriodicMessageFormat,
+		j.Name,
+		j.ID,
+		starttime,
+		dur,
+	)
+
+	return sendNotif(ctx, j, j.Status, subject, msg)
+}
+
+func ensureNotifRecord(ctx context.Context, vicedb *VICEDatabaser, job Job) error {
+	analysisRecordExists := vicedb.AnalysisRecordExists(ctx, job.ID)
+
+	if !analysisRecordExists {
+		notifId, err := vicedb.AddNotifRecord(ctx, &job)
+		if err != nil {
+			return err
+		}
+		log.Debugf("notif_statuses ID inserted: %s", notifId)
+	}
+
+	return nil
+}
+
 const maxAttempts = 3
 
 func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
@@ -180,13 +214,9 @@ func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warning
 				updateFailureCount func(context.Context, *Job, int) error
 			)
 
-			analysisRecordExists := vicedb.AnalysisRecordExists(ctx, j.ID)
-
-			if !analysisRecordExists {
-				if _, err = vicedb.AddNotifRecord(ctx, &j); err != nil {
-					log.Error(err)
-					continue
-				}
+			if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
+				log.Error(err)
+				continue
 			}
 
 			notifStatuses, err = vicedb.NotifStatuses(ctx, &j)
@@ -234,6 +264,63 @@ func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warning
 						continue
 					}
 				}
+			}
+		}
+	}
+}
+
+func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
+	// fetch jobs which periodic updates might apply to
+	jobs, err := JobPeriodicWarnings(ctx, db)
+
+	// loop over them and check if they have notif_statuses info
+	if err != nil {
+		log.Error(err)
+	} else {
+		for _, j := range jobs {
+			var (
+				notifStatuses       *NotifStatuses
+				now                 time.Time
+				comparisonTimestamp time.Time
+				periodDuration      time.Duration
+			)
+
+			// fetch preferences and update in the DB if needed
+			if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
+				log.Error(err)
+				continue
+			}
+
+			notifStatuses, err = vicedb.NotifStatuses(ctx, &j)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+
+			periodDuration = 14400 * time.Second
+			if notifStatuses.PeriodicWarningPeriod > 0 {
+				periodDuration = notifStatuses.PeriodicWarningPeriod * time.Second
+			}
+
+			comparisonTimestamp = j.StartDate
+			if notifStatuses.LastPeriodicWarning.After(j.StartDate) {
+				comparisonTimestamp = notifStatuses.lastPeriodicWarning
+			}
+
+			log.Infof("Comparing last-warning timestamp %s with period %s s", comparisonTimestamp, periodDuration)
+
+			now = time.Now()
+
+			// timeframe is met if: more recent of (last warning, job start date) + periodic warning period is before now
+			if comparisonTimestamp.Add(periodDuration).Before(now) {
+				// if so,
+				err = SendPeriodicNotification(ctx, &j)
+				if err != nil {
+					log.Error(errors.Wrap(err, "Error sending periodic notification"))
+					continue
+				}
+				// update timestamp:
+				vicedb.UpdateLastPeriodicWarning(ctx, &j, now)
 			}
 		}
 	}
@@ -363,6 +450,9 @@ func main() {
 
 			// 1 day warning
 			sendWarning(ctx, db, vicedb, 1440, oneDayWarningKey)
+
+			// periodic warnings
+			sendPeriodic(ctx, db, vicedb)
 
 			jl, err = JobsToKill(ctx, db)
 			if err != nil {
