@@ -35,7 +35,7 @@ var httpClient = http.Client{Transport: otelhttp.NewTransport(http.DefaultTransp
 
 const defaultConfig = `db:
   uri: "db:5432"
-notifications:
+notification_agent:
   base: http://notification-agent
 iplant_groups:
   base: http://iplant-groups
@@ -96,7 +96,7 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string) error {
 
 // ConfigureNotifications sets up the notification emitters.
 func ConfigureNotifications(cfg *viper.Viper, notifPath string) error {
-	notifBase := cfg.GetString("notifications.base")
+	notifBase := cfg.GetString("notification_agent.base")
 	notifURL, err := url.Parse(notifBase)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse %s", notifBase)
