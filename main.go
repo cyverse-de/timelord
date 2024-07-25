@@ -101,7 +101,7 @@ func ConfigureNotifications(cfg *viper.Viper, notifPath string) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse %s", notifBase)
 	}
-	notifURL.Path = notifPath
+	notifURL = notifURL.JoinPath(notifPath)
 	NotifsInit(notifURL.String())
 	return nil
 }
