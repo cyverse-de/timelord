@@ -304,7 +304,7 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 
 			sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
 			if err != nil {
-				log.Errorf(errors.Wrap(err, "Error parsing start date %s", j.StartDate))
+				log.Error(errors.Wrapf(err, "Error parsing start date %s", j.StartDate))
 				continue
 			}
 			comparisonTimestamp = sd
