@@ -299,12 +299,13 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 
 			periodDuration = 14400 * time.Second
 			if notifStatuses.PeriodicWarningPeriod > 0 {
-				periodDuration = notifStatuses.PeriodicWarningPeriod * time.Second
+				periodDuration = time.Duration(notifStatuses.PeriodicWarningPeriod) * time.Second
 			}
 
-			comparisonTimestamp = j.StartDate
-			if notifStatuses.LastPeriodicWarning.After(j.StartDate) {
-				comparisonTimestamp = notifStatuses.lastPeriodicWarning
+			sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
+			comparisonTimestamp = sd
+			if notifStatuses.LastPeriodicWarning.After(sd) {
+				comparisonTimestamp = notifStatuses.LastPeriodicWarning
 			}
 
 			log.Infof("Comparing last-warning timestamp %s with period %s s", comparisonTimestamp, periodDuration)
