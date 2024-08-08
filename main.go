@@ -303,6 +303,10 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 			}
 
 			sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
+			if err != nil {
+				log.Errorf(errors.Wrap(err, "Error parsing start date %s", j.StartDate))
+				continue
+			}
 			comparisonTimestamp = sd
 			if notifStatuses.LastPeriodicWarning.After(sd) {
 				comparisonTimestamp = notifStatuses.LastPeriodicWarning
@@ -321,7 +325,11 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 					continue
 				}
 				// update timestamp:
-				vicedb.UpdateLastPeriodicWarning(ctx, &j, now)
+				err = vicedb.UpdateLastPeriodicWarning(ctx, &j, now)
+				if err != nil {
+					log.Error(errors.Wrap(err, "Error updating periodic notification timestamp"))
+					continue
+				}
 			}
 		}
 	}
