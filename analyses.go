@@ -170,7 +170,7 @@ SELECT jobs.id,
   LEFT join notif_statuses ON jobs.id = notif_statuses.analysis_id
  WHERE jobs.status = $1
    AND (notif_statuses.last_periodic_warning is null
-    OR notif_statuses.last_periodic_warning < $2 - (coalesce(notif_statuses.periodic_warning_period, 14400)::text || ' seconds'::text)::interval)
+    OR notif_statuses.last_periodic_warning < now() - (coalesce(notif_statuses.periodic_warning_period, 14400)::text || ' seconds'::text)::interval)
 `
 
 // JobPeriodicWarnings returns a list of running jobs that may need periodic notifications to be sent
@@ -180,12 +180,10 @@ func JobPeriodicWarnings(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 		rows *sql.Rows
 	)
 
-	now := time.Now()
 	if rows, err = dedb.QueryContext(
 		ctx,
 		periodicWarningsQuery,
 		"Running",
-		now,
 	); err != nil {
 		return nil, err
 	}
