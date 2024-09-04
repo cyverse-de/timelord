@@ -299,7 +299,7 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 
 			periodDuration = 14400 * time.Second
 			if notifStatuses.PeriodicWarningPeriod > 0 {
-				periodDuration = time.Duration(notifStatuses.PeriodicWarningPeriod) * time.Second
+				periodDuration = notifStatuses.PeriodicWarningPeriod
 			}
 
 			sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
