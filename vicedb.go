@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	pqinterval "github.com/sanyokbig/pqinterval"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -24,7 +25,7 @@ type NotifStatuses struct {
 	KillWarningSent         bool
 	KillWarningFailureCount int
 	LastPeriodicWarning     time.Time
-	PeriodicWarningPeriod   int
+	PeriodicWarningPeriod   time.Duration
 }
 
 const notifStatusQuery = `
@@ -37,7 +38,7 @@ const notifStatusQuery = `
 		   kill_warning_sent,
 		   kill_warning_failure_count,
 		   coalesce(last_periodic_warning, '1970-01-01 00:00:00') as last_periodic_warning,
-		   coalesce(periodic_warning_period, 0) as periodic_warning_period
+		   coalesce(periodic_warning_period, '0 seconds'::interval) as periodic_warning_period
 	  from notif_statuses
 	 where analysis_id = $1
 `
@@ -65,7 +66,7 @@ func (v *VICEDatabaser) NotifStatuses(ctx context.Context, job *Job) (*NotifStat
 		&notifStatuses.KillWarningSent,
 		&notifStatuses.KillWarningFailureCount,
 		&notifStatuses.LastPeriodicWarning,
-		&notifStatuses.PeriodicWarningPeriod,
+		(*pqinterval.Duration)(&notifStatuses.PeriodicWarningPeriod),
 	); err != nil {
 		return nil, err
 	}
@@ -100,7 +101,7 @@ func (v *VICEDatabaser) AnalysisRecordExists(ctx context.Context, analysisID str
 }
 
 const addNotifRecordQuery = `
-insert into notif_statuses (analysis_id, external_id, periodic_warning_period) values ($1, $2, $3) returning id
+insert into notif_statuses (analysis_id, external_id, periodic_warning_period) values ($1, $2, cast($3 as interval)) returning id
 `
 
 // AddNotifRecord adds a new record to the notif_statuses table for the provided analysis.
@@ -116,7 +117,7 @@ func (v *VICEDatabaser) AddNotifRecord(ctx context.Context, job *Job) (string, e
 		addNotifRecordQuery,
 		job.ID,
 		job.ExternalID,
-		14400, // 4 hours
+		"4 hours", // hardcoded for now
 	).Scan(&notifID); err != nil {
 		return "", err
 	}
