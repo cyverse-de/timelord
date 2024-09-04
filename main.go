@@ -165,7 +165,7 @@ func SendWarningNotification(ctx context.Context, j *Job) error {
 }
 
 func SendPeriodicNotification(ctx context.Context, j *Job) error {
-	starttime, err := time.Parse(TimestampFromDBFormat, j.StartDate)
+	starttime, err := time.ParseInLocation(TimestampFromDBFormat, j.StartDate, time.Local)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse start date %s", j.StartDate)
 	}
@@ -302,7 +302,7 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 				periodDuration = notifStatuses.PeriodicWarningPeriod
 			}
 
-			sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
+			sd, err := time.ParseInLocation(TimestampFromDBFormat, j.StartDate, time.Local)
 			if err != nil {
 				log.Error(errors.Wrapf(err, "Error parsing start date %s", j.StartDate))
 				continue
