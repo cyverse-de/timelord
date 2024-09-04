@@ -152,6 +152,93 @@ func JobsToKill(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 	return jobs, nil
 }
 
+const periodicWarningsQuery = `
+SELECT jobs.id,
+       jobs.app_id,
+       jobs.user_id,
+       jobs.status,
+       jobs.job_description,
+       jobs.job_name,
+       jobs.result_folder_path,
+       jobs.planned_end_date,
+       jobs.start_date,
+       job_types.system_id,
+       users.username
+  FROM jobs
+  JOIN job_types on jobs.job_type_id = job_types.id
+  JOIN users on jobs.user_id = users.id
+  LEFT join notif_statuses ON jobs.id = notif_statuses.analysis_id
+ WHERE jobs.status = $1
+   AND (notif_statuses.last_periodic_warning is null
+    OR notif_statuses.last_periodic_warning < now() - coalesce(notif_statuses.periodic_warning_period, '4 hours'::interval))
+`
+
+// JobPeriodicWarnings returns a list of running jobs that may need periodic notifications to be sent
+func JobPeriodicWarnings(ctx context.Context, dedb *sql.DB) ([]Job, error) {
+	var (
+		err  error
+		rows *sql.Rows
+	)
+
+	if rows, err = dedb.QueryContext(
+		ctx,
+		periodicWarningsQuery,
+		"Running",
+	); err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := []Job{}
+
+	for rows.Next() {
+		var (
+			job            Job
+			startDate      pq.NullTime
+			plannedEndDate pq.NullTime
+		)
+
+		job = Job{}
+
+		if err = rows.Scan(
+			&job.ID,
+			&job.AppID,
+			&job.UserID,
+			&job.Status,
+			&job.Description,
+			&job.Name,
+			&job.ResultFolder,
+			&plannedEndDate,
+			&startDate,
+			&job.Type,
+			&job.User,
+		); err != nil {
+			return nil, err
+		}
+
+		if plannedEndDate.Valid {
+			job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
+		}
+
+		if startDate.Valid {
+			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
+		}
+
+		job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		jobs = append(jobs, job)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return jobs, nil
+}
+
 const jobWarningsQuery = `
 select jobs.id,
        jobs.app_id,
