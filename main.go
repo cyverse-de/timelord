@@ -169,9 +169,15 @@ func SendPeriodicNotification(ctx context.Context, j *Job) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse start date %s", j.StartDate)
 	}
-	dur := time.Since(starttime)
 
-	subject := fmt.Sprintf(PeriodicSubjectFormat, j.Name, starttime, dur)
+	// just print H(HH):MM format
+	dur := time.Since(starttime).Round(time.Minute)
+	h := dur / time.Hour
+	dur -= h * time.Hour
+	m := dur / time.Minute
+	durString := fmt.Sprintf("%d:%02d", h, m)
+
+	subject := fmt.Sprintf(PeriodicSubjectFormat, j.Name, starttime, durString)
 
 	msg := fmt.Sprintf(
 		PeriodicMessageFormat,
