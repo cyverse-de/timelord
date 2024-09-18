@@ -84,7 +84,7 @@ func NewPayload() *Payload {
 }
 
 // NewNotification returns a newly initialized *Notification.
-func NewNotification(user, subject, msg string, payload *Payload) *Notification {
+func NewNotification(user, subject, msg, emailTemplate string, payload *Payload) *Notification {
 	return &Notification{
 		URI:           NotifsURI,
 		Type:          "analysis",
@@ -92,9 +92,14 @@ func NewNotification(user, subject, msg string, payload *Payload) *Notification 
 		Subject:       subject,
 		Message:       msg,
 		Email:         true,
-		EmailTemplate: "analysis_status_change",
+		EmailTemplate: emailTemplate,
 		Payload:       payload,
 	}
+}
+
+// NewStatusChangeNotification returns a newly initialized *Notification using the analysis_status_change email template
+func NewStatusChangeNotification(user, subject, msg string, payload *Payload) *Notification {
+	return NewNotification(user, subject, msg, "analysis_status_change", payload)
 }
 
 // Send POSTs the notification to the URI.
