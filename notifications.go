@@ -77,7 +77,7 @@ type Payload struct {
 	User                  string `json:"user"`
 }
 
-// NewPayload returns a newly constructed *Payload
+// NewPayload returns a newly constructed *Payload with the Action set to "job_status_change"
 func NewPayload() *Payload {
 	return &Payload{
 		Action: "job_status_change",
