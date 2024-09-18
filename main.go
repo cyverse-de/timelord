@@ -184,7 +184,7 @@ func SendPeriodicNotification(ctx context.Context, j *Job) error {
 		j.Name,
 		j.ID,
 		starttime,
-		dur,
+		durString,
 	)
 
 	return sendNotif(ctx, j, j.Status, subject, msg)
