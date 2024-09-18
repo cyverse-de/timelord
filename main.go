@@ -291,6 +291,10 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 				periodDuration      time.Duration
 			)
 
+			if err = EnsurePlannedEndDate(ctx, db, &j); err != nil {
+				log.Error(errors.Wrapf(err, "Error ensuring a planned end date for job %s", j.ID))
+			}
+
 			// fetch preferences and update in the DB if needed
 			if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
 				log.Error(err)
