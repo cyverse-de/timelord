@@ -41,6 +41,21 @@ type Job struct {
 	ExternalID     string `json:"external_id"`
 }
 
+// getJobDuration takes a job and returns a duration string and the start time of the job
+func getJobDuration(j *Job) (string, time.Time, error) {
+	starttime, err := time.ParseInLocation(TimestampFromDBFormat, j.StartDate, time.Local)
+	if err != nil {
+		return "", starttime, errors.Wrapf(err, "failed to parse start date %s", j.StartDate)
+	}
+
+	// just print H(HH):MM format
+	dur := time.Since(starttime).Round(time.Minute)
+	h := dur / time.Hour
+	dur -= h * time.Hour
+	m := dur / time.Minute
+	return fmt.Sprintf("%d:%02d", h, m), starttime, nil
+}
+
 const jobsToKillQuery = `
 select jobs.id,
        jobs.app_id,
