@@ -68,12 +68,18 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string) error {
 	}
 	sdmillis := sd.UnixNano() / 1000000
 
+	durString, _, err := getJobDuration(j)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse job duration from %s", j.StartDate)
+	}
+
 	p := NewPayload()
 	p.AnalysisName = j.Name
 	p.AnalysisDescription = j.Description
 	p.AnalysisStatus = status
 	p.AnalysisStartDate = strconv.FormatInt(sdmillis, 10)
 	p.AnalysisResultsFolder = j.ResultFolder
+	p.RunDuration = durString
 	p.Email = user.Email
 	p.User = u
 
