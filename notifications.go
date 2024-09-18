@@ -98,11 +98,6 @@ func NewNotification(user, subject, msg, emailTemplate string, payload *Payload)
 	}
 }
 
-// NewStatusChangeNotification returns a newly initialized *Notification using the analysis_status_change email template
-func NewStatusChangeNotification(user, subject, msg string, payload *Payload) *Notification {
-	return NewNotification(user, subject, msg, "analysis_status_change", payload)
-}
-
 // Send POSTs the notification to the URI.
 func (n *Notification) Send(ctx context.Context) (*http.Response, error) {
 	msg, err := json.Marshal(n)

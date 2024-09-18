@@ -45,7 +45,7 @@ iplant_groups:
 const warningSentKey = "warningsent"
 const oneDayWarningKey = "onedaywarning"
 
-func sendNotif(ctx context.Context, j *Job, status, subject, msg string) error {
+func sendNotif(ctx context.Context, j *Job, status, subject, msg, email_template string) error {
 	var err error
 
 	// Don't send notification if things aren't configured correctly. It's
@@ -83,7 +83,7 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string) error {
 	p.Email = user.Email
 	p.User = u
 
-	notif := NewStatusChangeNotification(u, subject, msg, p)
+	notif := NewNotification(u, subject, msg, email_template, p)
 
 	resp, err := notif.Send(ctx)
 	if err != nil {
@@ -143,7 +143,7 @@ func SendKillNotification(ctx context.Context, j *Job, killNotifKey string) erro
 		endtime.UTC().Format(time.UnixDate),
 		j.ResultFolder,
 	)
-	err = sendNotif(ctx, j, "Canceled", subject, msg)
+	err = sendNotif(ctx, j, "Canceled", subject, msg, "analysis_status_change")
 	return err
 }
 
@@ -167,7 +167,7 @@ func SendWarningNotification(ctx context.Context, j *Job) error {
 		j.ResultFolder,
 	)
 
-	return sendNotif(ctx, j, j.Status, subject, msg)
+	return sendNotif(ctx, j, j.Status, subject, msg, "analysis_status_change")
 }
 
 func SendPeriodicNotification(ctx context.Context, j *Job) error {
@@ -186,7 +186,7 @@ func SendPeriodicNotification(ctx context.Context, j *Job) error {
 		durString,
 	)
 
-	return sendNotif(ctx, j, j.Status, subject, msg)
+	return sendNotif(ctx, j, j.Status, subject, msg, "analysis_periodic_notification")
 }
 
 func ensureNotifRecord(ctx context.Context, vicedb *VICEDatabaser, job Job) error {

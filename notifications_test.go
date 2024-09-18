@@ -18,12 +18,13 @@ func TestNotifsInit(t *testing.T) {
 	}
 }
 
-func TestNewStatusChangeNotification(t *testing.T) {
+func TestNewNotification(t *testing.T) {
 	expectedURI := "foo"
 	expectedUser := "user"
 	expectedSubject := "subject"
+	expectedTemplate := "analysis_status_change"
 	NotifsInit(expectedURI)
-	n := NewStatusChangeNotification(expectedUser, expectedSubject, "", nil)
+	n := NewNotification(expectedUser, expectedSubject, "", expectedTemplate, nil)
 	if n.URI != expectedURI {
 		t.Errorf("URI was %s, not %s", n.URI, expectedURI)
 	}
@@ -33,12 +34,15 @@ func TestNewStatusChangeNotification(t *testing.T) {
 	if n.Subject != expectedSubject {
 		t.Errorf("Subject was %s, not %s", n.Subject, expectedSubject)
 	}
+	if n.EmailTemplate != expectedTemplate {
+		t.Errorf("EmailTemplate was %s, not %s", n.EmailTemplate, expectedTemplate)
+	}
 }
 
 func TestSend(t *testing.T) {
 	expectedUser := "test-user"
 	expectedSubject := "test-subject"
-	n := NewStatusChangeNotification(expectedUser, expectedSubject, "", nil)
+	n := NewNotification(expectedUser, expectedSubject, "", "analysis_status_change", nil)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
