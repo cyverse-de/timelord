@@ -523,22 +523,12 @@ func setSubdomain(ctx context.Context, dedb *sql.DB, analysisID, subdomain strin
 
 const setPlannedEndDateMutation = `update only jobs set planned_end_date = $1 where id = $2`
 
+// setPlannedEndDate takes in context, db, a job ID, and a number of milliseconds since the epoch and sets that value as the planned end date for that job
+// previously, we were passing around semi-mangled timestamps, and needed to correct for having read in a local timestamp as a UTC one. This should no longer be necessary, but is noted here in case bugs crop up
 func setPlannedEndDate(ctx context.Context, dedb *sql.DB, id string, millisSinceEpoch int64) error {
 	var err error
 
-	// Get the time zone offset from UTC in seconds
-	_, offset := time.Now().Local().Zone()
-
-	// Durations are tracked as as nanoseconds stored as an int64, so convert
-	// the seconds into an int64 (which shouldn't lose precision), then
-	// multiply by 1000000000 to convert to Nanoseconds. Next multiply by -1
-	// to flip the sign on the offset, which is needed because we're doing
-	// weird-ish stuff with timestamps in the database. Multiply all of that
-	// by time.Nanosecond to make sure that we're using the right units.
-	addition := time.Duration(int64(offset)*1000000000*-1) * time.Nanosecond
-
-	plannedEndDate := time.Unix(0, millisSinceEpoch*1000000).
-		Add(addition).
+	plannedEndDate := time.UnixMilli(millisSinceEpoch).
 		Format("2006-01-02 15:04:05.000000-07")
 
 	if _, err = dedb.ExecContext(ctx, setPlannedEndDateMutation, plannedEndDate, id); err != nil {
