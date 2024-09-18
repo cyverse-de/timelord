@@ -627,6 +627,58 @@ func getTimeLimit(ctx context.Context, dedb *sql.DB, analysisID string) (int64, 
 	return timeLimitSeconds, nil
 }
 
+// EnsureSubdomain makes sure the provided job has a subdomain set in the DB, returning it
+func EnsureSubdomain(ctx context.Context, dedb *sql.DB, analysis *Job) (string, error) {
+	if analysis.Subdomain == "" {
+		// make sure to use analysis.ID, not external ID here.
+		userID, err := getUserIDForJob(ctx, dedb, analysis.ID)
+		if err != nil {
+			return "", errors.Wrapf(err, "error getting userID for job %s", analysis.ID)
+		} else {
+			log.Infof("user id is %s and invocation id is %s", userID, analysis.ExternalID)
+
+			// make sure to use externalID, not analysis.ID here
+			subdomain := generateSubdomain(userID, analysis.ExternalID)
+
+			log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, analysis.ExternalID)
+
+			if err = setSubdomain(ctx, dedb, analysis.ID, subdomain); err != nil {
+				return "", errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain)
+			}
+			return subdomain, nil
+		}
+	} else {
+		return analysis.Subdomain, nil
+	}
+}
+
+func EnsurePlannedEndDate(ctx context.Context, dedb *sql.DB, analysis *Job) error {
+	// Check to see if the planned_end_date is set for the analysis
+	if analysis.PlannedEndDate != "" {
+		log.Infof("planned end date for %s is set to %s, nothing to do", analysis.ID, analysis.PlannedEndDate)
+		return nil // it's already set, so move along.
+	}
+
+	startDate, err := time.ParseInLocation(TimestampFromDBFormat, analysis.StartDate, time.Local)
+	if err != nil {
+		return errors.Wrapf(err, "error parsing start date field %s", analysis.StartDate)
+	}
+	sdnano := startDate.UnixNano()
+
+	timeLimitSeconds, err := getTimeLimit(ctx, dedb, analysis.ID)
+	if err != nil {
+		return errors.Wrapf(err, "error fetching time limit for analysis %s", analysis.ID)
+	}
+
+	// StartDate is in milliseconds, so convert it to nanoseconds, add correct number of seconds,
+	// then convert back to milliseconds.
+	endDate := time.Unix(0, sdnano).Add(time.Duration(timeLimitSeconds)*time.Second).UnixNano() / 1000000
+	if err = setPlannedEndDate(ctx, dedb, analysis.ID, endDate); err != nil {
+		return errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate)
+	}
+	return nil
+}
+
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
@@ -680,53 +732,15 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 		msgLog.Infof("job status update for %s was %s", analysis.ID, update.State)
 
 		// Set the subdomain
-		if analysis.Subdomain == "" {
-			// make sure to use analysis.ID, not external ID here.
-			userID, err := getUserIDForJob(ctx, dedb, analysis.ID)
-			if err != nil {
-				msgLog.Error(errors.Wrapf(err, "error getting userID for job %s", analysis.ID))
-			} else {
-				msgLog = msgLog.WithFields(log.Fields{"userID": userID})
-				msgLog.Infof("user id is %s and invocation id is %s", userID, externalID)
-
-				// make sure to use externalID, not analysis.ID here
-				subdomain := generateSubdomain(userID, externalID)
-
-				msgLog.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, externalID)
-
-				if err = setSubdomain(ctx, dedb, analysis.ID, subdomain); err != nil {
-					msgLog.Error(errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain))
-				}
-				msgLog = msgLog.WithFields(log.Fields{"subdomain": subdomain})
-			}
-		} else {
-			msgLog = msgLog.WithFields(log.Fields{"subdomain": analysis.Subdomain})
-		}
-
-		// Check to see if the planned_end_date is set for the analysis
-		if analysis.PlannedEndDate != "" {
-			msgLog.Infof("planned end date for %s is set to %s, nothing to do", analysis.ID, analysis.PlannedEndDate)
-			return // it's already set, so move along.
-		}
-
-		startDate, err := time.Parse(TimestampFromDBFormat, analysis.StartDate)
+		subdomain, err := EnsureSubdomain(ctx, dedb, analysis)
 		if err != nil {
-			msgLog.Error(errors.Wrapf(err, "error parsing start date field %s", analysis.StartDate))
-			return
+			msgLog.Error(errors.Wrap(err, "error ensuring subdomain for analysis"))
 		}
-		sdnano := startDate.UnixNano()
+		msgLog = msgLog.WithFields(log.Fields{"subdomain": subdomain})
 
-		timeLimitSeconds, err := getTimeLimit(ctx, dedb, analysis.ID)
+		err = EnsurePlannedEndDate(ctx, dedb, analysis)
 		if err != nil {
-			msgLog.Error(errors.Wrapf(err, "error fetching time limit for analysis %s", analysis.ID))
-			return
-		}
-
-		// StartDate is in milliseconds, so convert it to nanoseconds, add correct number of seconds,
-		// then convert back to milliseconds.
-		endDate := time.Unix(0, sdnano).Add(time.Duration(timeLimitSeconds)*time.Second).UnixNano() / 1000000
-		if err = setPlannedEndDate(ctx, dedb, analysis.ID, endDate); err != nil {
-			msgLog.Error(errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate))
+			msgLog.Error(errors.Wrap(err, "error ensuring planned end date for analysis"))
 		}
 	}
 }
