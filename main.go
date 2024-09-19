@@ -62,7 +62,7 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string) error {
 	}
 
 	u := ParseID(j.User)
-	sd, err := time.Parse(TimestampFromDBFormat, j.StartDate)
+	sd, err := time.ParseInLocation(TimestampFromDBFormat, j.StartDate, time.Local)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse %s", j.StartDate)
 	}
@@ -125,7 +125,7 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 // their job has been killed.
 func SendKillNotification(ctx context.Context, j *Job, killNotifKey string) error {
 	subject := fmt.Sprintf(KillSubjectFormat, j.Name)
-	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
+	endtime, err := time.ParseInLocation(TimestampFromDBFormat, j.PlannedEndDate, time.Local)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
 	}
@@ -144,7 +144,7 @@ func SendKillNotification(ctx context.Context, j *Job, killNotifKey string) erro
 // SendWarningNotification sends a notification to the user telling them that
 // their job will be killed in the near future.
 func SendWarningNotification(ctx context.Context, j *Job) error {
-	endtime, err := time.Parse(TimestampFromDBFormat, j.PlannedEndDate)
+	endtime, err := time.ParseInLocation(TimestampFromDBFormat, j.PlannedEndDate, time.Local)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
 	}
@@ -290,6 +290,10 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 				comparisonTimestamp time.Time
 				periodDuration      time.Duration
 			)
+
+			if err = EnsurePlannedEndDate(ctx, db, &j); err != nil {
+				log.Error(errors.Wrapf(err, "Error ensuring a planned end date for job %s", j.ID))
+			}
 
 			// fetch preferences and update in the DB if needed
 			if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
