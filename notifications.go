@@ -71,12 +71,13 @@ type Payload struct {
 	AnalysisStatus        string `json:"analysisstatus"`
 	AnalysisStartDate     string `json:"analysisstartdate"`
 	AnalysisResultsFolder string `json:"analysisresultsfolder"`
+	RunDuration           string `json:"runduration"`
 	Email                 string `json:"email_address"`
 	Action                string `json:"action"`
 	User                  string `json:"user"`
 }
 
-// NewPayload returns a newly constructed *Payload
+// NewPayload returns a newly constructed *Payload with the Action set to "job_status_change"
 func NewPayload() *Payload {
 	return &Payload{
 		Action: "job_status_change",
@@ -84,7 +85,7 @@ func NewPayload() *Payload {
 }
 
 // NewNotification returns a newly initialized *Notification.
-func NewNotification(user, subject, msg string, payload *Payload) *Notification {
+func NewNotification(user, subject, msg, emailTemplate string, payload *Payload) *Notification {
 	return &Notification{
 		URI:           NotifsURI,
 		Type:          "analysis",
@@ -92,7 +93,7 @@ func NewNotification(user, subject, msg string, payload *Payload) *Notification 
 		Subject:       subject,
 		Message:       msg,
 		Email:         true,
-		EmailTemplate: "analysis_status_change",
+		EmailTemplate: emailTemplate,
 		Payload:       payload,
 	}
 }
