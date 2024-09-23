@@ -184,6 +184,7 @@ SELECT jobs.id,
   JOIN users on jobs.user_id = users.id
   LEFT join notif_statuses ON jobs.id = notif_statuses.analysis_id
  WHERE jobs.status = $1
+   AND jobs.planned_end_date > now()
    AND (notif_statuses.last_periodic_warning is null
     OR notif_statuses.last_periodic_warning < now() - coalesce(notif_statuses.periodic_warning_period, '4 hours'::interval))
 `
