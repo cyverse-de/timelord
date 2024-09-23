@@ -480,14 +480,10 @@ func main() {
 			}
 
 			for _, j := range jl {
-				analysisRecordExists := vicedb.AnalysisRecordExists(ctx, j.ID)
-
-				if !analysisRecordExists {
-					if _, err = vicedb.AddNotifRecord(ctx, &j); err != nil {
-						log.Error(err)
-						span.End()
-						continue
-					}
+				if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
+					log.Error(err)
+					span.End()
+					continue
 				}
 
 				var notifStatuses *NotifStatuses
