@@ -85,14 +85,14 @@ func NewPayload() *Payload {
 }
 
 // NewNotification returns a newly initialized *Notification.
-func NewNotification(user, subject, msg, emailTemplate string, payload *Payload) *Notification {
+func NewNotification(user, subject, msg string, email bool, emailTemplate string, payload *Payload) *Notification {
 	return &Notification{
 		URI:           NotifsURI,
 		Type:          "analysis",
 		User:          user,
 		Subject:       subject,
 		Message:       msg,
-		Email:         true,
+		Email:         email,
 		EmailTemplate: emailTemplate,
 		Payload:       payload,
 	}

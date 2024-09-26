@@ -39,6 +39,8 @@ type Job struct {
 	Type           string `json:"type"`
 	User           string `json:"user"`
 	ExternalID     string `json:"external_id"`
+	NotifyPeriodic bool   `json:"notify_periodic"`
+	PeriodicPeriod int    `json:"periodic_period"`
 }
 
 // getJobDuration takes a job and returns a duration string and the start time of the job
@@ -67,7 +69,9 @@ select jobs.id,
        jobs.planned_end_date,
        jobs.start_date,
        job_types.system_id,
-       users.username
+       users.username,
+       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
+       (jobs.submission->>'periodic_period')::int AS periodic_period
   from jobs
   join job_types on jobs.job_type_id = job_types.id
   join users on jobs.user_id = users.id
@@ -140,6 +144,8 @@ func JobsToKill(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 			&startDate,
 			&job.Type,
 			&job.User,
+			&job.NotifyPeriodic,
+			&job.PeriodicPeriod,
 		); err != nil {
 			return nil, err
 		}
@@ -178,7 +184,9 @@ SELECT jobs.id,
        jobs.planned_end_date,
        jobs.start_date,
        job_types.system_id,
-       users.username
+       users.username,
+       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
+       (jobs.submission->>'periodic_period')::int AS periodic_period
   FROM jobs
   JOIN job_types on jobs.job_type_id = job_types.id
   JOIN users on jobs.user_id = users.id
@@ -228,6 +236,8 @@ func JobPeriodicWarnings(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 			&startDate,
 			&job.Type,
 			&job.User,
+			&job.NotifyPeriodic,
+			&job.PeriodicPeriod,
 		); err != nil {
 			return nil, err
 		}
@@ -266,7 +276,9 @@ select jobs.id,
        jobs.planned_end_date,
        jobs.start_date,
        job_types.system_id,
-       users.username
+       users.username,
+       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
+       (jobs.submission->>'periodic_period')::int AS periodic_period
   from jobs
   join job_types on jobs.job_type_id = job_types.id
   join users on jobs.user_id = users.id
@@ -323,6 +335,8 @@ func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, e
 			&startDate,
 			&job.Type,
 			&job.User,
+			&job.NotifyPeriodic,
+			&job.PeriodicPeriod,
 		); err != nil {
 			return nil, err
 		}
@@ -473,6 +487,8 @@ select jobs.id,
        jobs.start_date,
        job_types.system_id,
        users.username,
+       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
+       (jobs.submission->>'periodic_period')::int AS periodic_period,
        job_steps.external_id
   from jobs
   join job_types on jobs.job_type_id = job_types.id
@@ -504,6 +520,8 @@ func lookupByExternalID(ctx context.Context, dedb *sql.DB, externalID string) (*
 		&startDate,
 		&job.Type,
 		&job.User,
+		&job.NotifyPeriodic,
+		&job.PeriodicPeriod,
 		&job.ExternalID,
 	); err != nil {
 		return nil, err

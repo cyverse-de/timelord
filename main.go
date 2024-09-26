@@ -83,7 +83,7 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg, email_template
 	p.Email = user.Email
 	p.User = u
 
-	notif := NewNotification(u, subject, msg, email_template, p)
+	notif := NewNotification(u, subject, msg, true, email_template, p)
 
 	resp, err := notif.Send(ctx)
 	if err != nil {
