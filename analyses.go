@@ -70,8 +70,8 @@ select jobs.id,
        jobs.start_date,
        job_types.system_id,
        users.username,
-       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
-       (jobs.submission->>'periodic_period')::int AS periodic_period
+       COALESCE((jobs.submission->>'notify_periodic')::bool, TRUE) AS notify_periodic,
+       COALESCE((jobs.submission->>'periodic_period')::int, 0) AS periodic_period
   from jobs
   join job_types on jobs.job_type_id = job_types.id
   join users on jobs.user_id = users.id
@@ -185,8 +185,8 @@ SELECT jobs.id,
        jobs.start_date,
        job_types.system_id,
        users.username,
-       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
-       (jobs.submission->>'periodic_period')::int AS periodic_period
+       COALESCE((jobs.submission->>'notify_periodic')::bool, TRUE) AS notify_periodic,
+       COALESCE((jobs.submission->>'periodic_period')::int, 0) AS periodic_period
   FROM jobs
   JOIN job_types on jobs.job_type_id = job_types.id
   JOIN users on jobs.user_id = users.id
@@ -277,8 +277,8 @@ select jobs.id,
        jobs.start_date,
        job_types.system_id,
        users.username,
-       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
-       (jobs.submission->>'periodic_period')::int AS periodic_period
+       COALESCE((jobs.submission->>'notify_periodic')::bool, TRUE) AS notify_periodic,
+       COALESCE((jobs.submission->>'periodic_period')::int, 0) AS periodic_period
   from jobs
   join job_types on jobs.job_type_id = job_types.id
   join users on jobs.user_id = users.id
@@ -487,8 +487,8 @@ select jobs.id,
        jobs.start_date,
        job_types.system_id,
        users.username,
-       (jobs.submission->>'notify_periodic')::bool AS notify_periodic,
-       (jobs.submission->>'periodic_period')::int AS periodic_period,
+       COALESCE((jobs.submission->>'notify_periodic')::bool, TRUE) AS notify_periodic,
+       COALESCE((jobs.submission->>'periodic_period')::int, 0) AS periodic_period,
        job_steps.external_id
   from jobs
   join job_types on jobs.job_type_id = job_types.id
