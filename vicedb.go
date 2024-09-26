@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	pqinterval "github.com/sanyokbig/pqinterval"
@@ -110,14 +111,21 @@ func (v *VICEDatabaser) AddNotifRecord(ctx context.Context, job *Job) (string, e
 	var (
 		err     error
 		notifID string
+		period  string
 	)
+
+	if job.PeriodicPeriod > 0 {
+		period = fmt.Sprintf("%d seconds", job.PeriodicPeriod)
+	} else {
+		period = "4 hours"
+	}
 
 	if err = v.db.QueryRowContext(
 		ctx,
 		addNotifRecordQuery,
 		job.ID,
 		job.ExternalID,
-		"4 hours", // hardcoded for now
+		period,
 	).Scan(&notifID); err != nil {
 		return "", err
 	}
