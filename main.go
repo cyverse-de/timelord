@@ -68,7 +68,7 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string, email b
 	}
 	sdmillis := sd.UnixNano() / 1000000
 
-	durString, _, err := getJobDuration(j)
+	durString, err := getJobDuration(j)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse job duration from %s", j.StartDate)
 	}
@@ -173,19 +173,23 @@ func SendWarningNotification(ctx context.Context, j *Job) error {
 }
 
 func SendPeriodicNotification(ctx context.Context, j *Job) error {
-	durString, starttime, err := getJobDuration(j)
+	durString, err := getJobDuration(j)
 	if err != nil {
 		return err
 	}
 
-	subject := fmt.Sprintf(PeriodicSubjectFormat, j.Name, starttime, durString)
+	remainingString, err := getRemainingDuration(j)
+	if err != nil {
+		return err
+	}
+
+	subject := PeriodicSubjectFormat // this is a static/generic string
 
 	msg := fmt.Sprintf(
 		PeriodicMessageFormat,
 		j.Name,
-		j.ID,
-		starttime,
 		durString,
+		remainingString,
 	)
 
 	return sendNotif(ctx, j, j.Status, subject, msg, j.NotifyPeriodic, "analysis_periodic_notification")
