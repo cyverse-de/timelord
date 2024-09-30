@@ -89,7 +89,10 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string, email b
 	p.RunDuration = durString
 	p.EndDuration = remainingString
 	access_url, err := j.accessURL()
-	if err != nil && access_url != "" {
+	if err != nil {
+		return errors.Wrapf(err, "failed to determine access URL for job")
+	}
+	if access_url != "" {
 		p.AccessURL = access_url
 	}
 	if email {
