@@ -40,6 +40,9 @@ notification_agent:
 iplant_groups:
   base: http://iplant-groups
   user: grouper-user
+k8s:
+  frontend:
+    base: ""
 `
 
 const warningSentKey = "warningsent"
@@ -72,14 +75,23 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string, email b
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse job duration from %s", j.StartDate)
 	}
+	remainingString, err := getRemainingDuration(j)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse remaining time duration from %s", j.PlannedEndDate)
+	}
 
 	p := NewPayload()
 	p.AnalysisName = j.Name
 	p.AnalysisDescription = j.Description
 	p.AnalysisStatus = status
-	p.AnalysisStartDate = strconv.FormatInt(sdmillis, 10)
+	p.StartDate = strconv.FormatInt(sdmillis, 10)
 	p.AnalysisResultsFolder = j.ResultFolder
 	p.RunDuration = durString
+	p.EndDuration = remainingString
+	access_url, err := j.accessURL()
+	if err != nil && access_url != "" {
+		p.AccessURL = access_url
+	}
 	if email {
 		p.Email = user.Email
 	}
@@ -110,6 +122,7 @@ func ConfigureNotifications(cfg *viper.Viper, notifPath string) error {
 		return errors.Wrapf(err, "failed to parse %s", notifBase)
 	}
 	notifURL = notifURL.JoinPath(notifPath)
+
 	NotifsInit(notifURL.String())
 	return nil
 }
@@ -126,6 +139,21 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 	q.Set("user", groupsUser)
 	groupsURL.RawQuery = q.Encode()
 	UsersInit(groupsURL.String())
+	return nil
+}
+
+func ConfigureAnalyses(cfg *viper.Viper) error {
+	viceBase := cfg.GetString("k8s.frontend.base")
+	if viceBase == "" {
+		AnalysesInit("")
+		return nil
+	}
+	viceURL, err := url.Parse(viceBase)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse %s", viceBase)
+	}
+
+	AnalysesInit(viceURL.String())
 	return nil
 }
 

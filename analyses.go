@@ -24,6 +24,14 @@ import (
 // database through the GraphQL server. Shouldn't have timezone info.
 const TimestampFromDBFormat = "2006-01-02T15:04:05"
 
+// VICEURI is the base URI for VICE access
+var VICEURI string
+
+// AnalysesInit initializes the base URI for VICE access
+func AnalysesInit(u string) {
+	VICEURI = u
+}
+
 // Job contains the information about an analysis that we're interested in.
 type Job struct {
 	ID             string `json:"id"`
@@ -41,6 +49,15 @@ type Job struct {
 	ExternalID     string `json:"external_id"`
 	NotifyPeriodic bool   `json:"notify_periodic"`
 	PeriodicPeriod int    `json:"periodic_period"`
+}
+
+func (j *Job) accessURL() (string, error) {
+	vice_uri, err := url.Parse(VICEURI)
+	if err != nil {
+		return "", errors.Wrapf(err, "Error parsing VICE URI from %s", VICEURI)
+	}
+	vice_uri.Host = j.Subdomain + "." + vice_uri.Host
+	return vice_uri.String(), nil
 }
 
 // getJobDuration takes a job and returns a duration string since the start of the job

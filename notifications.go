@@ -65,9 +65,11 @@ type Payload struct {
 	AnalysisName          string `json:"analysisname"`
 	AnalysisDescription   string `json:"analysisdescription"`
 	AnalysisStatus        string `json:"analysisstatus"`
-	AnalysisStartDate     string `json:"analysisstartdate"`
+	StartDate             string `json:"startdate"`
 	AnalysisResultsFolder string `json:"analysisresultsfolder"`
 	RunDuration           string `json:"runduration"`
+	EndDuration           string `json:"endduration"`
+	AccessURL             string `json:"access_url"`
 	Email                 string `json:"email_address"`
 	Action                string `json:"action"`
 	User                  string `json:"user"`
