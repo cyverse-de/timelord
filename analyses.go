@@ -24,6 +24,14 @@ import (
 // database through the GraphQL server. Shouldn't have timezone info.
 const TimestampFromDBFormat = "2006-01-02T15:04:05"
 
+// VICEURI is the base URI for VICE access
+var VICEURI string
+
+// AnalysesInit initializes the base URI for VICE access
+func AnalysesInit(u string) {
+	VICEURI = u
+}
+
 // Job contains the information about an analysis that we're interested in.
 type Job struct {
 	ID             string `json:"id"`
@@ -43,11 +51,20 @@ type Job struct {
 	PeriodicPeriod int    `json:"periodic_period"`
 }
 
-// getJobDuration takes a job and returns a duration string and the start time of the job
-func getJobDuration(j *Job) (string, time.Time, error) {
+func (j *Job) accessURL() (string, error) {
+	vice_uri, err := url.Parse(VICEURI)
+	if err != nil {
+		return "", errors.Wrapf(err, "Error parsing VICE URI from %s", VICEURI)
+	}
+	vice_uri.Host = j.Subdomain + "." + vice_uri.Host
+	return vice_uri.String(), nil
+}
+
+// getJobDuration takes a job and returns a duration string since the start of the job
+func getJobDuration(j *Job) (string, error) {
 	starttime, err := time.ParseInLocation(TimestampFromDBFormat, j.StartDate, time.Local)
 	if err != nil {
-		return "", starttime, errors.Wrapf(err, "failed to parse start date %s", j.StartDate)
+		return "", errors.Wrapf(err, "failed to parse start date %s", j.StartDate)
 	}
 
 	// just print H(HH):MM format
@@ -55,7 +72,22 @@ func getJobDuration(j *Job) (string, time.Time, error) {
 	h := dur / time.Hour
 	dur -= h * time.Hour
 	m := dur / time.Minute
-	return fmt.Sprintf("%d:%02d", h, m), starttime, nil
+	return fmt.Sprintf("%d:%02d", h, m), nil
+}
+
+// getRemainingDuration takes a job and returns a duration string until the planned end date
+func getRemainingDuration(j *Job) (string, error) {
+	endtime, err := time.ParseInLocation(TimestampFromDBFormat, j.PlannedEndDate, time.Local)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to parse planned end date %s", j.PlannedEndDate)
+	}
+
+	// just print H(HH):MM format
+	dur := time.Until(endtime).Round(time.Minute)
+	h := dur / time.Hour
+	dur -= h * time.Hour
+	m := dur / time.Minute
+	return fmt.Sprintf("%d:%02d", h, m), nil
 }
 
 const jobsToKillQuery = `
