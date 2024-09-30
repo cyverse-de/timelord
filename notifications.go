@@ -40,7 +40,7 @@ const WarningSubjectFormat = "Analysis %s will terminate on %s (%s)."
 // PeriodicMessageFormat is the parameterized message that gets sent to users
 // when it's time to send a regular reminder the job is still running
 // parameters: analysis name, current duration, duration until planned end date
-const PeriodicMessageFormat = `Analysis "%s" has been running for %s and will stop in %s. You can terminate or extend the time limit here.`
+const PeriodicMessageFormat = `Analysis "%s" has been running for %s and will stop in %s.`
 
 // PeriodicSubjectFormat is the subject for the email that is sent
 // to users as a regular reminder of a running job
