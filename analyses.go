@@ -93,25 +93,54 @@ func getRemainingDuration(j *Job) (string, error) {
 	return fmt.Sprintf("%d:%02d", h, m), nil
 }
 
-const jobsToKillQuery = `
-select jobs.id,
-       jobs.app_id,
-       jobs.user_id,
-       jobs.status,
-       jobs.job_description,
-       jobs.job_name,
-       jobs.result_folder_path,
-       jobs.planned_end_date,
-       jobs.start_date,
-       job_types.system_id,
-       users.username,
-       COALESCE((jobs.submission->>'notify_periodic')::bool, TRUE) AS notify_periodic,
-       COALESCE((jobs.submission->>'periodic_period')::int, 0) AS periodic_period
-  from jobs
-  join job_types on jobs.job_type_id = job_types.id
-  join users on jobs.user_id = users.id
- where jobs.status = $1
-   and jobs.planned_end_date <= $2`
+func jobFromRow(ctx context.Context, dedb *sql.DB, rows *sql.Rows) (Job, error) {
+	var (
+		err            error
+		job            Job
+		startDate      pq.NullTime
+		plannedEndDate pq.NullTime
+		subdomain      sql.NullString
+	)
+
+	job = Job{}
+
+	if err := rows.Scan(
+		&job.ID,
+		&job.AppID,
+		&job.UserID,
+		&job.Status,
+		&job.Description,
+		&job.Name,
+		&job.ResultFolder,
+		&plannedEndDate,
+		&subdomain,
+		&startDate,
+		&job.Type,
+		&job.User,
+		&job.NotifyPeriodic,
+		&job.PeriodicPeriod,
+	); err != nil {
+		return job, err
+	}
+
+	if plannedEndDate.Valid {
+		job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
+	}
+
+	if subdomain.Valid {
+		job.Subdomain = subdomain.String
+	}
+
+	if startDate.Valid {
+		job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
+	}
+
+	job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
+	if err != nil {
+		return job, err
+	}
+	return job, nil
+}
 
 const externalIDsQuery = `
 select job_steps.external_id
@@ -138,6 +167,27 @@ func getExternalID(ctx context.Context, dedb *sql.DB, jobID string) (string, err
 	return externalID, err
 }
 
+const jobsToKillQuery = `
+select jobs.id,
+       jobs.app_id,
+       jobs.user_id,
+       jobs.status,
+       jobs.job_description,
+       jobs.job_name,
+       jobs.result_folder_path,
+       jobs.planned_end_date,
+       jobs.subdomain,
+       jobs.start_date,
+       job_types.system_id,
+       users.username,
+       COALESCE((jobs.submission->>'notify_periodic')::bool, TRUE) AS notify_periodic,
+       COALESCE((jobs.submission->>'periodic_period')::int, 0) AS periodic_period
+  from jobs
+  join job_types on jobs.job_type_id = job_types.id
+  join users on jobs.user_id = users.id
+ where jobs.status = $1
+   and jobs.planned_end_date <= $2`
+
 // JobsToKill returns a list of running jobs that are past their expiration date
 // and can be killed off. 'api' should be the base URL for the analyses service.
 func JobsToKill(ctx context.Context, dedb *sql.DB) ([]Job, error) {
@@ -159,41 +209,7 @@ func JobsToKill(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 	jobs := []Job{}
 
 	for rows.Next() {
-		var (
-			job            Job
-			startDate      pq.NullTime
-			plannedEndDate pq.NullTime
-		)
-
-		job = Job{}
-
-		if err = rows.Scan(
-			&job.ID,
-			&job.AppID,
-			&job.UserID,
-			&job.Status,
-			&job.Description,
-			&job.Name,
-			&job.ResultFolder,
-			&plannedEndDate,
-			&startDate,
-			&job.Type,
-			&job.User,
-			&job.NotifyPeriodic,
-			&job.PeriodicPeriod,
-		); err != nil {
-			return nil, err
-		}
-
-		if plannedEndDate.Valid {
-			job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
-		}
-
-		if startDate.Valid {
-			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
-		}
-
-		job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
+		job, err := jobFromRow(ctx, dedb, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -217,6 +233,7 @@ SELECT jobs.id,
        jobs.job_name,
        jobs.result_folder_path,
        jobs.planned_end_date,
+       jobs.subdomain,
        jobs.start_date,
        job_types.system_id,
        users.username,
@@ -251,41 +268,7 @@ func JobPeriodicWarnings(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 	jobs := []Job{}
 
 	for rows.Next() {
-		var (
-			job            Job
-			startDate      pq.NullTime
-			plannedEndDate pq.NullTime
-		)
-
-		job = Job{}
-
-		if err = rows.Scan(
-			&job.ID,
-			&job.AppID,
-			&job.UserID,
-			&job.Status,
-			&job.Description,
-			&job.Name,
-			&job.ResultFolder,
-			&plannedEndDate,
-			&startDate,
-			&job.Type,
-			&job.User,
-			&job.NotifyPeriodic,
-			&job.PeriodicPeriod,
-		); err != nil {
-			return nil, err
-		}
-
-		if plannedEndDate.Valid {
-			job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
-		}
-
-		if startDate.Valid {
-			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
-		}
-
-		job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
+		job, err := jobFromRow(ctx, dedb, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -309,6 +292,7 @@ select jobs.id,
        jobs.job_name,
        jobs.result_folder_path,
        jobs.planned_end_date,
+       jobs.subdomain,
        jobs.start_date,
        job_types.system_id,
        users.username,
@@ -350,41 +334,7 @@ func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, e
 	jobs := []Job{}
 
 	for rows.Next() {
-		var (
-			job            Job
-			startDate      pq.NullTime
-			plannedEndDate pq.NullTime
-		)
-
-		job = Job{}
-
-		if err = rows.Scan(
-			&job.ID,
-			&job.AppID,
-			&job.UserID,
-			&job.Status,
-			&job.Description,
-			&job.Name,
-			&job.ResultFolder,
-			&plannedEndDate,
-			&startDate,
-			&job.Type,
-			&job.User,
-			&job.NotifyPeriodic,
-			&job.PeriodicPeriod,
-		); err != nil {
-			return nil, err
-		}
-
-		if plannedEndDate.Valid {
-			job.PlannedEndDate = plannedEndDate.Time.Format(TimestampFromDBFormat)
-		}
-
-		if startDate.Valid {
-			job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
-		}
-
-		job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
+		job, err := jobFromRow(ctx, dedb, rows)
 		if err != nil {
 			return nil, err
 		}
