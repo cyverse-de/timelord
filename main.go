@@ -145,6 +145,7 @@ func ConfigureUserLookups(cfg *viper.Viper) error {
 	return nil
 }
 
+// ConfigureAnalyses sets up the base VICE url
 func ConfigureAnalyses(cfg *viper.Viper) error {
 	viceBase := cfg.GetString("k8s.frontend.base")
 	if viceBase == "" {
@@ -421,6 +422,12 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Info("done configuring user lookups")
+
+	log.Info("configuring VICE URL...")
+	if err = ConfigureAnalyses(cfg); err != nil {
+		log.Fatal(err)
+	}
+	log.Info("done configuring VICE URL")
 
 	var k8sEnabled bool
 	if cfg.InConfig("vice.k8s-enabled") {

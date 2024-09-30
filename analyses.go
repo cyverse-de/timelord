@@ -52,6 +52,9 @@ type Job struct {
 }
 
 func (j *Job) accessURL() (string, error) {
+	if VICEURI == "" {
+		return "", nil
+	}
 	vice_uri, err := url.Parse(VICEURI)
 	if err != nil {
 		return "", errors.Wrapf(err, "Error parsing VICE URI from %s", VICEURI)
