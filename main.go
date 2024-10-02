@@ -81,6 +81,7 @@ func sendNotif(ctx context.Context, j *Job, status, subject, msg string, email b
 	}
 
 	p := NewPayload()
+	p.AnalysisID = j.ID
 	p.AnalysisName = j.Name
 	p.AnalysisDescription = j.Description
 	p.AnalysisStatus = status

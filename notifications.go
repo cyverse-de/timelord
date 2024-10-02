@@ -62,6 +62,7 @@ type Notification struct {
 
 // Payload is the information needed for Analysis notifications
 type Payload struct {
+	AnalysisID            string `json:"analysisid"`
 	AnalysisName          string `json:"analysisname"`
 	AnalysisDescription   string `json:"analysisdescription"`
 	AnalysisStatus        string `json:"analysisstatus"`
