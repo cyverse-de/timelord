@@ -216,7 +216,7 @@ func SendPeriodicNotification(ctx context.Context, j *Job) error {
 		return err
 	}
 
-	subject := PeriodicSubjectFormat // this is a static/generic string
+	subject := fmt.Sprintf(PeriodicSubjectFormat, time.Now().Format("2006-01-02 15:04")) // Mostly static with a timestamp to distinguish
 
 	msg := fmt.Sprintf(
 		PeriodicMessageFormat,

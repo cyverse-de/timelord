@@ -44,8 +44,8 @@ const PeriodicMessageFormat = `Analysis "%s" has been running for %s and will st
 
 // PeriodicSubjectFormat is the subject for the email that is sent
 // to users as a regular reminder of a running job
-// no parameters, as it is vague on purpose to encourage opening the email with full details
-const PeriodicSubjectFormat = `CyVerse: Your analysis is still running`
+// one parameter should be a timestamp, to distinguish messages so they're not grouped by gmail et al
+const PeriodicSubjectFormat = `CyVerse: Your analysis is still running (%s)`
 
 // Notification is a message intended as a notification to some upstream service
 // or the DE UI.
