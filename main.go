@@ -547,10 +547,12 @@ func main() {
 			}
 
 			for _, j := range jl {
+				log.Infof("handling analysis kill logic for external ID: %s, ID: %s", j.ExternalID, j.ID)
+
 				if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
 					log.Error(err)
 					span.End()
-					continue
+					//continue
 				}
 
 				var notifStatuses *NotifStatuses
@@ -559,37 +561,37 @@ func main() {
 				if err != nil {
 					log.Error(err)
 					span.End()
-					continue
+					//continue
 				}
 
-				if !notifStatuses.KillWarningSent {
-					err = jobKiller.KillJob(ctx, db, &j)
+				log.Debugf("before kill job for external ID: %s, analysis ID: %s", j.ExternalID, j.ID)
+
+				err = jobKiller.KillJob(ctx, db, &j)
+				if err != nil {
+					log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
+				} else {
+
+					err = SendKillNotification(ctx, &j, *killNotifKey)
 					if err != nil {
-						log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
-					} else {
-
-						err = SendKillNotification(ctx, &j, *killNotifKey)
-						if err != nil {
-							log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
-						}
+						log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
 					}
+				}
 
-					if err != nil {
-						notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
+				if err != nil {
+					notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
 
-						if err = vicedb.SetKillWarningFailureCount(ctx, &j, notifStatuses.KillWarningFailureCount); err != nil {
-							log.Error(err)
-							span.End()
-							continue
-						}
+					if err = vicedb.SetKillWarningFailureCount(ctx, &j, notifStatuses.KillWarningFailureCount); err != nil {
+						log.Error(err)
+						span.End()
+						continue
 					}
+				}
 
-					if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
-						if err = vicedb.SetKillWarningSent(ctx, &j, true); err != nil {
-							log.Error(err)
-							span.End()
-							continue
-						}
+				if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
+					if err = vicedb.SetKillWarningSent(ctx, &j, true); err != nil {
+						log.Error(err)
+						span.End()
+						continue
 					}
 				}
 			}
