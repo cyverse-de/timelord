@@ -397,8 +397,30 @@ func main() {
 		killNotifKey    = flag.String("kill-notif-key", "killnotifsent", "The key for the annotation detailing whether the notification about job termination was sent.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", warningSentKey, "The key for the annotation detailing whether the job termination warning was sent.")
+		logLevelFlag    = flag.String("log-level", "info", "The log level. Acceptable values are trace, debug, info, warn, error, fatal, panic.")
 	)
 	flag.Parse()
+
+	loggingLevel := log.InfoLevel
+	switch *logLevelFlag {
+	case log.TraceLevel.String():
+		loggingLevel = log.TraceLevel
+	case log.DebugLevel.String():
+		loggingLevel = log.DebugLevel
+	case log.InfoLevel.String():
+		loggingLevel = log.InfoLevel
+	case log.WarnLevel.String():
+		loggingLevel = log.WarnLevel
+	case log.ErrorLevel.String():
+		loggingLevel = log.ErrorLevel
+	case log.FatalLevel.String():
+		loggingLevel = log.FatalLevel
+	case log.PanicLevel.String():
+		loggingLevel = log.PanicLevel
+	default:
+		log.Fatalf("Unsupported log level: %s\n", *logLevelFlag)
+	}
+	log.SetLevel(loggingLevel)
 
 	// make sure the configuration object has sane defaults.
 	if cfg, err = configurate.InitDefaults(*configPath, defaultConfig); err != nil {
