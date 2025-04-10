@@ -518,10 +518,9 @@ func main() {
 	)
 	log.Info("done configuring messaging support")
 
-	jobKiller := &JobKiller{
-		K8sEnabled:     k8sEnabled,
-		AppsBase:       appsBase,
-		AppExposerBase: *appExposerBase,
+	jobKiller, err := NewJobKiller(k8sEnabled, appsBase, *appExposerBase)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	go func() {

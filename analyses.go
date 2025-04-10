@@ -6,11 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/cyverse-de/messaging/v9"
@@ -50,6 +46,8 @@ type Job struct {
 	NotifyPeriodic bool   `json:"notify_periodic"`
 	PeriodicPeriod int    `json:"periodic_period"`
 }
+
+type Analysis = Job
 
 func (j *Job) accessURL() (string, error) {
 	if VICEURI == "" {
@@ -347,116 +345,6 @@ func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, e
 	}
 
 	return jobs, nil
-}
-
-// JobKiller is responsible for killing jobs either in HTCondor or in K8s.
-type JobKiller struct {
-	K8sEnabled     bool   // whether or not the VICE apps are running k8s
-	AppsBase       string // base URL for the apps service
-	AppExposerBase string // base URL for the app-exposer serivce
-}
-
-// KillJob uses either the apps or app-exposer APIs to kill a VICE job.
-func (j *JobKiller) KillJob(ctx context.Context, dedb *sql.DB, job *Job) error {
-	if j.K8sEnabled {
-		return j.killK8sJob(ctx, dedb, job)
-	}
-	return j.killCondorJob(ctx, job.ID, job.User)
-
-}
-
-// killCondorJob uses the provided API at the base URL to kill a running job. This
-// will probably be to the apps service. jobID should be the UUID for the Job,
-// typically returned in the ID field by the analyses service. The username
-// should be the short username for the user that launched the job.
-func (j *JobKiller) killCondorJob(ctx context.Context, jobID, username string) error {
-	apiURL, err := url.Parse(j.AppsBase)
-	if err != nil {
-		return err
-	}
-
-	apiURL.Path = filepath.Join(apiURL.Path, "analyses", jobID, "stop")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), nil)
-	if err != nil {
-		return err
-	}
-
-	var shortusername string
-	userparts := strings.Split(username, "@")
-	if len(userparts) > 1 {
-		shortusername = userparts[0]
-	} else {
-		shortusername = username
-	}
-	q := req.URL.Query()
-	q.Add("user", shortusername)
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for POST %s was %d as %s", apiURL.String(), resp.StatusCode, username)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	log.Infof("response from %s was: %s", req.URL, string(body))
-	return nil
-}
-
-// killK8sJob uses the app-exposer API to make a job save its outputs and exit.
-// JobID should be the external_id (AKA invocationID) for the job.
-func (j *JobKiller) killK8sJob(ctx context.Context, dedb *sql.DB, job *Job) error {
-	var err error
-
-	origAPIURL, err := url.Parse(j.AppExposerBase)
-	if err != nil {
-		return err
-	}
-
-	externalID := job.ExternalID
-
-	var apiURL *url.URL
-	apiURL, err = url.Parse(origAPIURL.String()) // lol
-	if err != nil {
-		return errors.Wrapf(err, "error parsing URL %s while processing external-id %s", origAPIURL.String(), externalID)
-	}
-
-	apiURL.Path = filepath.Join(apiURL.Path, "vice", externalID, "save-and-exit")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), nil)
-	if err != nil {
-		return errors.Wrapf(err, "error creating save-and-exit request for external-id %s", externalID)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return errors.Wrapf(err, "error calling save-and-exit for external-id %s", externalID)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for POST %s was %d", apiURL.String(), resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return errors.Wrapf(err, "error reading response body of save-and-exit call for external-id %s", externalID)
-	}
-
-	log.Infof("response from %s was: %s", req.URL, string(body))
-
-	resp.Body.Close()
-
-	return nil
 }
 
 const jobByExternalIDQuery = `
