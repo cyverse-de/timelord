@@ -569,11 +569,14 @@ func main() {
 				// Always try to kill the job if it's in the list of jobs to kill.
 				err = jobKiller.KillJob(ctx, db, &j)
 				if err != nil {
+					// Log the error, but don't return and don't do a continue. The issue may
+					// fix itself on the next attempt and the user should still be warned if
+					// they haven't been already.
 					log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
 				}
 
-				// Don't send kill warnings if the kill attempt failed or the warning has already
-				// been sent.
+				// Don't send kill warnings if warning has already been sent. Don't block kill
+				// attempts if the notification failed or if the kill warning was not sent.
 				if !notifStatuses.KillWarningSent {
 					err = SendKillNotification(ctx, &j, *killNotifKey)
 					if err != nil {
