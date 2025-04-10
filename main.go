@@ -566,32 +566,37 @@ func main() {
 
 				log.Debugf("before kill job for external ID: %s, analysis ID: %s", j.ExternalID, j.ID)
 
+				// Always try to kill the job if it's in the list of jobs to kill.
 				err = jobKiller.KillJob(ctx, db, &j)
 				if err != nil {
 					log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
-				} else {
+				}
 
+				// Don't send kill warnings if the kill attempt failed or the warning has already
+				// been sent.
+				if !notifStatuses.KillWarningSent {
 					err = SendKillNotification(ctx, &j, *killNotifKey)
 					if err != nil {
 						log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
 					}
-				}
 
-				if err != nil {
-					notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
+					// the err here only refers to the error possibly returned by the SendKillNotification call.
+					if err != nil {
+						notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
 
-					if err = vicedb.SetKillWarningFailureCount(ctx, &j, notifStatuses.KillWarningFailureCount); err != nil {
-						log.Error(err)
-						span.End()
-						continue
+						if err = vicedb.SetKillWarningFailureCount(ctx, &j, notifStatuses.KillWarningFailureCount); err != nil {
+							log.Error(err)
+							span.End()
+							continue
+						}
 					}
-				}
 
-				if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
-					if err = vicedb.SetKillWarningSent(ctx, &j, true); err != nil {
-						log.Error(err)
-						span.End()
-						continue
+					if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
+						if err = vicedb.SetKillWarningSent(ctx, &j, true); err != nil {
+							log.Error(err)
+							span.End()
+							continue
+						}
 					}
 				}
 			}
