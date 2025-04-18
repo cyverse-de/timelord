@@ -17,7 +17,7 @@ type JobKiller struct {
 	AppsBase   string      // base URL for the apps service
 	appExposer *AppExposer // client for the app-exposer service
 	dedb       *sql.DB
-	jslURL     *url.URL
+	jslURL     *url.URL // the URL for the job-status-listener service
 }
 
 func NewJobKiller(k8sEnabled bool, appsBase, aeBase string, dedb *sql.DB, jslURL *url.URL) (*JobKiller, error) {
