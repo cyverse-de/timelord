@@ -6,11 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/cyverse-de/messaging/v9"
@@ -50,6 +46,8 @@ type Job struct {
 	NotifyPeriodic bool   `json:"notify_periodic"`
 	PeriodicPeriod int    `json:"periodic_period"`
 }
+
+type Analysis = Job
 
 func (j *Job) accessURL() (string, error) {
 	if VICEURI == "" {
@@ -93,7 +91,17 @@ func getRemainingDuration(j *Job) (string, error) {
 	return fmt.Sprintf("%d:%02d", h, m), nil
 }
 
-func jobFromRow(ctx context.Context, dedb *sql.DB, rows *sql.Rows) (Job, error) {
+type TimelordAnalyses struct {
+	dedb *sql.DB
+}
+
+func NewTimelordAnalyses(dedb *sql.DB) *TimelordAnalyses {
+	return &TimelordAnalyses{
+		dedb,
+	}
+}
+
+func (a *TimelordAnalyses) jobFromRow(ctx context.Context, rows *sql.Rows) (Job, error) {
 	var (
 		err            error
 		job            Job
@@ -135,7 +143,7 @@ func jobFromRow(ctx context.Context, dedb *sql.DB, rows *sql.Rows) (Job, error) 
 		job.StartDate = startDate.Time.Format(TimestampFromDBFormat)
 	}
 
-	job.ExternalID, err = getExternalID(ctx, dedb, job.ID)
+	job.ExternalID, err = a.getExternalID(ctx, job.ID)
 	if err != nil {
 		return job, err
 	}
@@ -148,14 +156,14 @@ select job_steps.external_id
  where job_steps.job_id = $1
  limit 1`
 
-func getExternalID(ctx context.Context, dedb *sql.DB, jobID string) (string, error) {
+func (a *TimelordAnalyses) getExternalID(ctx context.Context, jobID string) (string, error) {
 	var (
 		err        error
 		row        *sql.Row
 		externalID string
 	)
 
-	row = dedb.QueryRowContext(
+	row = a.dedb.QueryRowContext(
 		ctx,
 		externalIDsQuery,
 		jobID,
@@ -190,13 +198,13 @@ select jobs.id,
 
 // JobsToKill returns a list of running jobs that are past their expiration date
 // and can be killed off. 'api' should be the base URL for the analyses service.
-func JobsToKill(ctx context.Context, dedb *sql.DB) ([]Job, error) {
+func (a *TimelordAnalyses) JobsToKill(ctx context.Context) ([]Job, error) {
 	var (
 		err  error
 		rows *sql.Rows
 	)
 
-	if rows, err = dedb.QueryContext(
+	if rows, err = a.dedb.QueryContext(
 		ctx,
 		jobsToKillQuery,
 		"Running",
@@ -209,7 +217,7 @@ func JobsToKill(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 	jobs := []Job{}
 
 	for rows.Next() {
-		job, err := jobFromRow(ctx, dedb, rows)
+		job, err := a.jobFromRow(ctx, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -250,13 +258,13 @@ SELECT jobs.id,
 `
 
 // JobPeriodicWarnings returns a list of running jobs that may need periodic notifications to be sent
-func JobPeriodicWarnings(ctx context.Context, dedb *sql.DB) ([]Job, error) {
+func (a *TimelordAnalyses) JobPeriodicWarnings(ctx context.Context) ([]Job, error) {
 	var (
 		err  error
 		rows *sql.Rows
 	)
 
-	if rows, err = dedb.QueryContext(
+	if rows, err = a.dedb.QueryContext(
 		ctx,
 		periodicWarningsQuery,
 		"Running",
@@ -268,7 +276,7 @@ func JobPeriodicWarnings(ctx context.Context, dedb *sql.DB) ([]Job, error) {
 	jobs := []Job{}
 
 	for rows.Next() {
-		job, err := jobFromRow(ctx, dedb, rows)
+		job, err := a.jobFromRow(ctx, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -309,7 +317,7 @@ select jobs.id,
 // JobKillWarnings returns a list of running jobs that are set to be killed
 // within the number of minutes specified. 'api' should be the base URL for the
 // analyses service.
-func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, error) {
+func (a *TimelordAnalyses) JobKillWarnings(ctx context.Context, minutes int64) ([]Job, error) {
 	var (
 		err  error
 		rows *sql.Rows
@@ -320,7 +328,7 @@ func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, e
 	// nowtimestamp := now.Format(fmtstring)
 	// futuretimestamp := now.Add(time.Duration(minutes) * time.Minute).Format(fmtstring)
 
-	if rows, err = dedb.QueryContext(
+	if rows, err = a.dedb.QueryContext(
 		ctx,
 		jobWarningsQuery,
 		"Running",
@@ -334,7 +342,7 @@ func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, e
 	jobs := []Job{}
 
 	for rows.Next() {
-		job, err := jobFromRow(ctx, dedb, rows)
+		job, err := a.jobFromRow(ctx, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -347,116 +355,6 @@ func JobKillWarnings(ctx context.Context, dedb *sql.DB, minutes int64) ([]Job, e
 	}
 
 	return jobs, nil
-}
-
-// JobKiller is responsible for killing jobs either in HTCondor or in K8s.
-type JobKiller struct {
-	K8sEnabled     bool   // whether or not the VICE apps are running k8s
-	AppsBase       string // base URL for the apps service
-	AppExposerBase string // base URL for the app-exposer serivce
-}
-
-// KillJob uses either the apps or app-exposer APIs to kill a VICE job.
-func (j *JobKiller) KillJob(ctx context.Context, dedb *sql.DB, job *Job) error {
-	if j.K8sEnabled {
-		return j.killK8sJob(ctx, dedb, job)
-	}
-	return j.killCondorJob(ctx, job.ID, job.User)
-
-}
-
-// killCondorJob uses the provided API at the base URL to kill a running job. This
-// will probably be to the apps service. jobID should be the UUID for the Job,
-// typically returned in the ID field by the analyses service. The username
-// should be the short username for the user that launched the job.
-func (j *JobKiller) killCondorJob(ctx context.Context, jobID, username string) error {
-	apiURL, err := url.Parse(j.AppsBase)
-	if err != nil {
-		return err
-	}
-
-	apiURL.Path = filepath.Join(apiURL.Path, "analyses", jobID, "stop")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), nil)
-	if err != nil {
-		return err
-	}
-
-	var shortusername string
-	userparts := strings.Split(username, "@")
-	if len(userparts) > 1 {
-		shortusername = userparts[0]
-	} else {
-		shortusername = username
-	}
-	q := req.URL.Query()
-	q.Add("user", shortusername)
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for POST %s was %d as %s", apiURL.String(), resp.StatusCode, username)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	log.Infof("response from %s was: %s", req.URL, string(body))
-	return nil
-}
-
-// killK8sJob uses the app-exposer API to make a job save its outputs and exit.
-// JobID should be the external_id (AKA invocationID) for the job.
-func (j *JobKiller) killK8sJob(ctx context.Context, dedb *sql.DB, job *Job) error {
-	var err error
-
-	origAPIURL, err := url.Parse(j.AppExposerBase)
-	if err != nil {
-		return err
-	}
-
-	externalID := job.ExternalID
-
-	var apiURL *url.URL
-	apiURL, err = url.Parse(origAPIURL.String()) // lol
-	if err != nil {
-		return errors.Wrapf(err, "error parsing URL %s while processing external-id %s", origAPIURL.String(), externalID)
-	}
-
-	apiURL.Path = filepath.Join(apiURL.Path, "vice", externalID, "save-and-exit")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL.String(), nil)
-	if err != nil {
-		return errors.Wrapf(err, "error creating save-and-exit request for external-id %s", externalID)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return errors.Wrapf(err, "error calling save-and-exit for external-id %s", externalID)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("response status code for POST %s was %d", apiURL.String(), resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return errors.Wrapf(err, "error reading response body of save-and-exit call for external-id %s", externalID)
-	}
-
-	log.Infof("response from %s was: %s", req.URL, string(body))
-
-	resp.Body.Close()
-
-	return nil
 }
 
 const jobByExternalIDQuery = `
@@ -481,7 +379,7 @@ select jobs.id,
   join job_steps on jobs.id = job_steps.job_id
  where job_steps.external_id = $1`
 
-func lookupByExternalID(ctx context.Context, dedb *sql.DB, externalID string) (*Job, error) {
+func (a *TimelordAnalyses) lookupByExternalID(ctx context.Context, externalID string) (*Job, error) {
 	var (
 		err            error
 		job            *Job
@@ -492,7 +390,7 @@ func lookupByExternalID(ctx context.Context, dedb *sql.DB, externalID string) (*
 
 	job = &Job{}
 
-	if err = dedb.QueryRowContext(ctx, jobByExternalIDQuery, externalID).Scan(
+	if err = a.dedb.QueryRowContext(ctx, jobByExternalIDQuery, externalID).Scan(
 		&job.ID,
 		&job.AppID,
 		&job.UserID,
@@ -530,10 +428,10 @@ func generateSubdomain(userID, externalID string) string {
 
 const setSubdomainMutation = `update only jobs set subdomain = $1 where id = $2`
 
-func setSubdomain(ctx context.Context, dedb *sql.DB, analysisID, subdomain string) error {
+func (a *TimelordAnalyses) setSubdomain(ctx context.Context, analysisID, subdomain string) error {
 	var err error
 
-	if _, err = dedb.ExecContext(ctx, setSubdomainMutation, subdomain, analysisID); err != nil {
+	if _, err = a.dedb.ExecContext(ctx, setSubdomainMutation, subdomain, analysisID); err != nil {
 		return errors.Wrapf(err, "error setting subdomain for job %s to %s", analysisID, subdomain)
 	}
 
@@ -544,13 +442,13 @@ const setPlannedEndDateMutation = `update only jobs set planned_end_date = $1 wh
 
 // setPlannedEndDate takes in context, db, a job ID, and a number of milliseconds since the epoch and sets that value as the planned end date for that job
 // previously, we were passing around semi-mangled timestamps, and needed to correct for having read in a local timestamp as a UTC one. This should no longer be necessary, but is noted here in case bugs crop up
-func setPlannedEndDate(ctx context.Context, dedb *sql.DB, id string, millisSinceEpoch int64) error {
+func (a *TimelordAnalyses) setPlannedEndDate(ctx context.Context, id string, millisSinceEpoch int64) error {
 	var err error
 
 	plannedEndDate := time.UnixMilli(millisSinceEpoch).
 		Format("2006-01-02 15:04:05.000000-07")
 
-	if _, err = dedb.ExecContext(ctx, setPlannedEndDateMutation, plannedEndDate, id); err != nil {
+	if _, err = a.dedb.ExecContext(ctx, setPlannedEndDateMutation, plannedEndDate, id); err != nil {
 		return errors.Wrapf(err, "error setting planned_end_date to %s for job %s", plannedEndDate, id)
 	}
 
@@ -566,14 +464,14 @@ SELECT t.name
     ON s.job_type_id = t.id
  WHERE j.id = $1`
 
-func isInteractive(ctx context.Context, dedb *sql.DB, id string) (bool, error) {
+func (a *TimelordAnalyses) isInteractive(ctx context.Context, id string) (bool, error) {
 	var (
 		err      error
 		rows     *sql.Rows
 		jobTypes []string
 	)
 
-	if rows, err = dedb.QueryContext(ctx, stepTypeQuery, id); err != nil {
+	if rows, err = a.dedb.QueryContext(ctx, stepTypeQuery, id); err != nil {
 		return false, err
 	}
 	defer rows.Close()
@@ -603,12 +501,12 @@ SELECT user_id
  WHERE id = $1
 `
 
-func getUserIDForJob(ctx context.Context, dedb *sql.DB, analysisID string) (string, error) {
+func (a *TimelordAnalyses) getUserIDForJob(ctx context.Context, analysisID string) (string, error) {
 	var (
 		err    error
 		userID string
 	)
-	if err = dedb.QueryRowContext(ctx, getUserIDQuery, analysisID).Scan(&userID); err != nil {
+	if err = a.dedb.QueryRowContext(ctx, getUserIDQuery, analysisID).Scan(&userID); err != nil {
 		return "", err
 	}
 	return userID, nil
@@ -625,22 +523,22 @@ SELECT sum(CASE WHEN tools.time_limit_seconds > 0 THEN tools.time_limit_seconds 
  WHERE jobs.id = $1
 `
 
-func getTimeLimit(ctx context.Context, dedb *sql.DB, analysisID string) (int64, error) {
+func (a *TimelordAnalyses) getTimeLimit(ctx context.Context, analysisID string) (int64, error) {
 	var (
 		err              error
 		timeLimitSeconds int64
 	)
-	if err = dedb.QueryRowContext(ctx, getTimeLimitQuery, analysisID).Scan(&timeLimitSeconds); err != nil {
+	if err = a.dedb.QueryRowContext(ctx, getTimeLimitQuery, analysisID).Scan(&timeLimitSeconds); err != nil {
 		return 0, err
 	}
 	return timeLimitSeconds, nil
 }
 
 // EnsureSubdomain makes sure the provided job has a subdomain set in the DB, returning it
-func EnsureSubdomain(ctx context.Context, dedb *sql.DB, analysis *Job) (string, error) {
+func (a *TimelordAnalyses) EnsureSubdomain(ctx context.Context, analysis *Job) (string, error) {
 	if analysis.Subdomain == "" {
 		// make sure to use analysis.ID, not external ID here.
-		userID, err := getUserIDForJob(ctx, dedb, analysis.ID)
+		userID, err := a.getUserIDForJob(ctx, analysis.ID)
 		if err != nil {
 			return "", errors.Wrapf(err, "error getting userID for job %s", analysis.ID)
 		} else {
@@ -651,7 +549,7 @@ func EnsureSubdomain(ctx context.Context, dedb *sql.DB, analysis *Job) (string, 
 
 			log.Infof("generated subdomain for analysis %s is %s, based on user ID %s and invocation ID %s", analysis.ID, subdomain, userID, analysis.ExternalID)
 
-			if err = setSubdomain(ctx, dedb, analysis.ID, subdomain); err != nil {
+			if err = a.setSubdomain(ctx, analysis.ID, subdomain); err != nil {
 				return "", errors.Wrapf(err, "error setting subdomain for analysis '%s' to '%s'", analysis.ID, subdomain)
 			}
 			return subdomain, nil
@@ -661,7 +559,7 @@ func EnsureSubdomain(ctx context.Context, dedb *sql.DB, analysis *Job) (string, 
 	}
 }
 
-func EnsurePlannedEndDate(ctx context.Context, dedb *sql.DB, analysis *Job) error {
+func (a *TimelordAnalyses) EnsurePlannedEndDate(ctx context.Context, analysis *Job) error {
 	// Check to see if the planned_end_date is set for the analysis
 	if analysis.PlannedEndDate != "" {
 		log.Infof("planned end date for %s is set to %s, nothing to do", analysis.ID, analysis.PlannedEndDate)
@@ -674,7 +572,7 @@ func EnsurePlannedEndDate(ctx context.Context, dedb *sql.DB, analysis *Job) erro
 	}
 	sdnano := startDate.UnixNano()
 
-	timeLimitSeconds, err := getTimeLimit(ctx, dedb, analysis.ID)
+	timeLimitSeconds, err := a.getTimeLimit(ctx, analysis.ID)
 	if err != nil {
 		return errors.Wrapf(err, "error fetching time limit for analysis %s", analysis.ID)
 	}
@@ -682,7 +580,7 @@ func EnsurePlannedEndDate(ctx context.Context, dedb *sql.DB, analysis *Job) erro
 	// StartDate is in milliseconds, so convert it to nanoseconds, add correct number of seconds,
 	// then convert back to milliseconds.
 	endDate := time.Unix(0, sdnano).Add(time.Duration(timeLimitSeconds)*time.Second).UnixNano() / 1000000
-	if err = setPlannedEndDate(ctx, dedb, analysis.ID, endDate); err != nil {
+	if err = a.setPlannedEndDate(ctx, analysis.ID, endDate); err != nil {
 		return errors.Wrapf(err, "error setting planned end date for analysis '%s' to '%d'", analysis.ID, endDate)
 	}
 	return nil
@@ -691,7 +589,7 @@ func EnsurePlannedEndDate(ctx context.Context, dedb *sql.DB, analysis *Job) erro
 // CreateMessageHandler returns a function that can be used by the messaging
 // package to handle job status messages. The handler will set the planned
 // end date for an analysis if it's not already set.
-func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
+func (a *TimelordAnalyses) CreateMessageHandler() func(context.Context, amqp.Delivery) {
 	return func(ctx context.Context, delivery amqp.Delivery) {
 		var err error
 		msgLog := log.WithFields(log.Fields{"context": "message handler"})
@@ -715,14 +613,14 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 		externalID = update.Job.InvocationID
 		msgLog = msgLog.WithFields(log.Fields{"externalID": externalID})
 
-		analysis, err := lookupByExternalID(ctx, dedb, externalID)
+		analysis, err := a.lookupByExternalID(ctx, externalID)
 		if err != nil {
 			msgLog.Error(errors.Wrapf(err, "error looking up analysis by external ID '%s'", externalID))
 			return
 		}
 		msgLog = msgLog.WithFields(log.Fields{"ID": analysis.ID})
 
-		analysisIsInteractive, err := isInteractive(ctx, dedb, analysis.ID)
+		analysisIsInteractive, err := a.isInteractive(ctx, analysis.ID)
 		if err != nil {
 			msgLog.Error(errors.Wrapf(err, "error looking up interactive status for analysis %s", analysis.ID))
 			return
@@ -741,13 +639,13 @@ func CreateMessageHandler(dedb *sql.DB) func(context.Context, amqp.Delivery) {
 		msgLog.Infof("job status update for %s was %s", analysis.ID, update.State)
 
 		// Set the subdomain
-		subdomain, err := EnsureSubdomain(ctx, dedb, analysis)
+		subdomain, err := a.EnsureSubdomain(ctx, analysis)
 		if err != nil {
 			msgLog.Error(errors.Wrap(err, "error ensuring subdomain for analysis"))
 		}
 		msgLog = msgLog.WithFields(log.Fields{"subdomain": subdomain})
 
-		err = EnsurePlannedEndDate(ctx, dedb, analysis)
+		err = a.EnsurePlannedEndDate(ctx, analysis)
 		if err != nil {
 			msgLog.Error(errors.Wrap(err, "error ensuring planned end date for analysis"))
 		}

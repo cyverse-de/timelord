@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -244,8 +243,8 @@ func ensureNotifRecord(ctx context.Context, vicedb *VICEDatabaser, job Job) erro
 
 const maxAttempts = 3
 
-func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
-	jobs, err := JobKillWarnings(ctx, db, warningInterval)
+func sendWarning(ctx context.Context, a *TimelordAnalyses, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
+	jobs, err := a.JobKillWarnings(ctx, warningInterval)
 	if err != nil {
 		log.Error(err)
 	} else {
@@ -313,9 +312,9 @@ func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warning
 	}
 }
 
-func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
+func sendPeriodic(ctx context.Context, a *TimelordAnalyses, vicedb *VICEDatabaser) {
 	// fetch jobs which periodic updates might apply to
-	jobs, err := JobPeriodicWarnings(ctx, db)
+	jobs, err := a.JobPeriodicWarnings(ctx)
 
 	// loop over them and check if they have notif_statuses info
 	if err != nil {
@@ -329,7 +328,7 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 				periodDuration      time.Duration
 			)
 
-			if err = EnsurePlannedEndDate(ctx, db, &j); err != nil {
+			if err = a.EnsurePlannedEndDate(ctx, &j); err != nil {
 				log.Error(errors.Wrapf(err, "Error ensuring a planned end date for job %s", j.ID))
 			}
 
@@ -394,6 +393,7 @@ func main() {
 		configPath      = flag.String("config", "/etc/iplant/de/jobservices.yml", "The path to the YAML config file.")
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appExposerBase  = flag.String("app-exposer", "http://app-exposer", "The base URL for the app-exposer service.")
+		jslBase         = flag.String("job-status-listener", "http://job-status-listener", "The base URL for the job-status-listener service.")
 		killNotifKey    = flag.String("kill-notif-key", "killnotifsent", "The key for the annotation detailing whether the notification about job termination was sent.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", warningSentKey, "The key for the annotation detailing whether the job termination warning was sent.")
@@ -508,20 +508,26 @@ func main() {
 
 	go amqpclient.Listen()
 
+	jslURL, err := url.Parse(*jslBase)
+	if err != nil {
+		log.Fatal("could not parse --job-status-listener")
+	}
+
+	a := NewTimelordAnalyses(db)
+
 	amqpclient.AddConsumer(
 		exchange,
 		exchangeType,
 		"timelord",
 		messaging.UpdatesKey,
-		CreateMessageHandler(db),
+		a.CreateMessageHandler(),
 		100,
 	)
 	log.Info("done configuring messaging support")
 
-	jobKiller := &JobKiller{
-		K8sEnabled:     k8sEnabled,
-		AppsBase:       appsBase,
-		AppExposerBase: *appExposerBase,
+	jobKiller, err := NewJobKiller(k8sEnabled, appsBase, *appExposerBase, db, jslURL)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	go func() {
@@ -531,15 +537,15 @@ func main() {
 			ctx, span := otel.Tracer(otelName).Start(context.Background(), "job killer iteration")
 
 			// 1 hour warning
-			sendWarning(ctx, db, vicedb, *warningInterval, *warningSentKey)
+			sendWarning(ctx, a, vicedb, *warningInterval, *warningSentKey)
 
 			// 1 day warning
-			sendWarning(ctx, db, vicedb, 1440, oneDayWarningKey)
+			sendWarning(ctx, a, vicedb, 1440, oneDayWarningKey)
 
 			// periodic warnings
-			sendPeriodic(ctx, db, vicedb)
+			sendPeriodic(ctx, a, vicedb)
 
-			jl, err = JobsToKill(ctx, db)
+			jl, err = a.JobsToKill(ctx)
 			if err != nil {
 				log.Error(errors.Wrap(err, "error getting list of jobs to kill"))
 				span.End()
@@ -548,6 +554,31 @@ func main() {
 
 			for _, j := range jl {
 				log.Infof("handling analysis kill logic for external ID: %s, ID: %s", j.ExternalID, j.ID)
+
+				log.Infof("checking for analysis in the cluster by external ID: %s", j.ExternalID)
+				// Look for the analysis to terminate in the cluster.
+				found, err := jobKiller.checkForAnalysisInCluster(ctx, &j)
+				if err != nil {
+					log.Error(err)
+				}
+
+				// If the analysis to terminate isn't in the cluster, mark it as completed through
+				// job-status-listener.
+				if !found {
+					log.Infof("analysis with external ID %s was not found in the cluster", j.ExternalID)
+
+					if err = jobKiller.sendCompletedStatus(ctx, &j); err != nil {
+						log.Errorf("error sending 'Completed' status for analysis with external ID %s: %s", j.ExternalID, err)
+					}
+
+					log.Debugf("sent 'Completed' status update for analysis with external ID %s", j.ExternalID)
+
+					// If the job is listed in the database but isn't in the cluster, we don't want to send
+					// notifications when marking it as completed, so do a continue here.
+					continue
+				}
+
+				log.Infof("analysis with external ID %s was found in the cluster", j.ExternalID)
 
 				if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
 					log.Error(err)
@@ -566,32 +597,40 @@ func main() {
 
 				log.Debugf("before kill job for external ID: %s, analysis ID: %s", j.ExternalID, j.ID)
 
-				err = jobKiller.KillJob(ctx, db, &j)
+				// Always try to kill the job if it's in the list of jobs to kill.
+				err = jobKiller.KillJob(ctx, &j)
 				if err != nil {
+					// Log the error, but don't return and don't do a continue. The issue may
+					// fix itself on the next attempt and the user should still be warned if
+					// they haven't been already.
 					log.Error(errors.Wrapf(err, "error terminating analysis '%s'", j.ID))
-				} else {
+				}
 
+				// Don't send kill warnings if warning has already been sent. Don't block kill
+				// attempts if the notification failed or if the kill warning was not sent.
+				if !notifStatuses.KillWarningSent {
 					err = SendKillNotification(ctx, &j, *killNotifKey)
 					if err != nil {
 						log.Error(errors.Wrapf(err, "error sending notification that %s has been terminated", j.ID))
 					}
-				}
 
-				if err != nil {
-					notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
+					// the err here only refers to the error possibly returned by the SendKillNotification call.
+					if err != nil {
+						notifStatuses.KillWarningFailureCount = notifStatuses.KillWarningFailureCount + 1
 
-					if err = vicedb.SetKillWarningFailureCount(ctx, &j, notifStatuses.KillWarningFailureCount); err != nil {
-						log.Error(err)
-						span.End()
-						continue
+						if err = vicedb.SetKillWarningFailureCount(ctx, &j, notifStatuses.KillWarningFailureCount); err != nil {
+							log.Error(err)
+							span.End()
+							continue
+						}
 					}
-				}
 
-				if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
-					if err = vicedb.SetKillWarningSent(ctx, &j, true); err != nil {
-						log.Error(err)
-						span.End()
-						continue
+					if err == nil || notifStatuses.KillWarningFailureCount >= maxAttempts {
+						if err = vicedb.SetKillWarningSent(ctx, &j, true); err != nil {
+							log.Error(err)
+							span.End()
+							continue
+						}
 					}
 				}
 			}
