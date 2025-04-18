@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -244,8 +243,8 @@ func ensureNotifRecord(ctx context.Context, vicedb *VICEDatabaser, job Job) erro
 
 const maxAttempts = 3
 
-func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
-	jobs, err := JobKillWarnings(ctx, db, warningInterval)
+func sendWarning(ctx context.Context, a *TimelordAnalyses, vicedb *VICEDatabaser, warningInterval int64, warningKey string) {
+	jobs, err := a.JobKillWarnings(ctx, warningInterval)
 	if err != nil {
 		log.Error(err)
 	} else {
@@ -313,9 +312,9 @@ func sendWarning(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser, warning
 	}
 }
 
-func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
+func sendPeriodic(ctx context.Context, a *TimelordAnalyses, vicedb *VICEDatabaser) {
 	// fetch jobs which periodic updates might apply to
-	jobs, err := JobPeriodicWarnings(ctx, db)
+	jobs, err := a.JobPeriodicWarnings(ctx)
 
 	// loop over them and check if they have notif_statuses info
 	if err != nil {
@@ -329,7 +328,7 @@ func sendPeriodic(ctx context.Context, db *sql.DB, vicedb *VICEDatabaser) {
 				periodDuration      time.Duration
 			)
 
-			if err = EnsurePlannedEndDate(ctx, db, &j); err != nil {
+			if err = a.EnsurePlannedEndDate(ctx, &j); err != nil {
 				log.Error(errors.Wrapf(err, "Error ensuring a planned end date for job %s", j.ID))
 			}
 
@@ -394,6 +393,7 @@ func main() {
 		configPath      = flag.String("config", "/etc/iplant/de/jobservices.yml", "The path to the YAML config file.")
 		expvarPort      = flag.String("port", "60000", "The path to listen for expvar requests on.")
 		appExposerBase  = flag.String("app-exposer", "http://app-exposer", "The base URL for the app-exposer service.")
+		jslBase         = flag.String("job-status-listener", "http://job-status-listener", "The base URL for the job-status-listener service.")
 		killNotifKey    = flag.String("kill-notif-key", "killnotifsent", "The key for the annotation detailing whether the notification about job termination was sent.")
 		warningInterval = flag.Int64("warning-interval", 60, "The number of minutes in advance to warn users about job kills.")
 		warningSentKey  = flag.String("warning-sent-key", warningSentKey, "The key for the annotation detailing whether the job termination warning was sent.")
@@ -508,17 +508,24 @@ func main() {
 
 	go amqpclient.Listen()
 
+	jslURL, err := url.Parse(*jslBase)
+	if err != nil {
+		log.Fatal("could not parse --job-status-listener")
+	}
+
+	a := NewTimelordAnalyses(db)
+
 	amqpclient.AddConsumer(
 		exchange,
 		exchangeType,
 		"timelord",
 		messaging.UpdatesKey,
-		CreateMessageHandler(db),
+		a.CreateMessageHandler(),
 		100,
 	)
 	log.Info("done configuring messaging support")
 
-	jobKiller, err := NewJobKiller(k8sEnabled, appsBase, *appExposerBase)
+	jobKiller, err := NewJobKiller(k8sEnabled, appsBase, *appExposerBase, db, jslURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -530,15 +537,15 @@ func main() {
 			ctx, span := otel.Tracer(otelName).Start(context.Background(), "job killer iteration")
 
 			// 1 hour warning
-			sendWarning(ctx, db, vicedb, *warningInterval, *warningSentKey)
+			sendWarning(ctx, a, vicedb, *warningInterval, *warningSentKey)
 
 			// 1 day warning
-			sendWarning(ctx, db, vicedb, 1440, oneDayWarningKey)
+			sendWarning(ctx, a, vicedb, 1440, oneDayWarningKey)
 
 			// periodic warnings
-			sendPeriodic(ctx, db, vicedb)
+			sendPeriodic(ctx, a, vicedb)
 
-			jl, err = JobsToKill(ctx, db)
+			jl, err = a.JobsToKill(ctx)
 			if err != nil {
 				log.Error(errors.Wrap(err, "error getting list of jobs to kill"))
 				span.End()
@@ -566,7 +573,7 @@ func main() {
 				log.Debugf("before kill job for external ID: %s, analysis ID: %s", j.ExternalID, j.ID)
 
 				// Always try to kill the job if it's in the list of jobs to kill.
-				err = jobKiller.KillJob(ctx, db, &j)
+				err = jobKiller.KillJob(ctx, &j)
 				if err != nil {
 					// Log the error, but don't return and don't do a continue. The issue may
 					// fix itself on the next attempt and the user should still be warned if
