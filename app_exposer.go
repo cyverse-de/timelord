@@ -190,7 +190,7 @@ func (ae *AppExposer) AdminListing(ctx context.Context, analysis *Analysis) (*Re
 
 	api := *ae.baseURL
 
-	api.Path = filepath.Join(api.Path, "admin", "listing")
+	api.Path = filepath.Join(api.Path, "vice", "admin", "listing")
 
 	req, err = http.NewRequestWithContext(ctx, http.MethodGet, api.String(), nil)
 	if err != nil {
