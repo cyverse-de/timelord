@@ -15,7 +15,7 @@ import (
 type JobKiller struct {
 	K8sEnabled bool        // whether or not the VICE apps are running k8s
 	AppsBase   string      // base URL for the apps service
-	appExposer *AppExposer // base URL for the app-exposer serivce
+	appExposer *AppExposer // client for the app-exposer service
 	dedb       *sql.DB
 	jslURL     *url.URL
 }
