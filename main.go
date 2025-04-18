@@ -555,6 +555,31 @@ func main() {
 			for _, j := range jl {
 				log.Infof("handling analysis kill logic for external ID: %s, ID: %s", j.ExternalID, j.ID)
 
+				log.Infof("checking for analysis in the cluster by external ID: %s", j.ExternalID)
+				// Look for the analysis to terminate in the cluster.
+				found, err := jobKiller.checkForAnalysisInCluster(ctx, &j)
+				if err != nil {
+					log.Error(err)
+				}
+
+				// If the analysis to terminate isn't in the cluster, mark it as completed through
+				// app-exposer.
+				if !found {
+					log.Infof("analysis with external ID %s was not found in the cluster", j.ExternalID)
+
+					if err = jobKiller.sendCompletedStatus(ctx, &j); err != nil {
+						log.Errorf("error sending 'Completed' status for analysis with external ID %s: %s", j.ExternalID, err)
+					}
+
+					log.Debugf("sent 'Completed' status update for analysis with external ID %s", j.ExternalID)
+
+					// If the job is listed in the database but isn't in the cluster, we don't want to send
+					// notifications when marking it as completed, so do a continue here.
+					continue
+				}
+
+				log.Infof("analysis with external ID %s was found in the cluster", j.ExternalID)
+
 				if err = ensureNotifRecord(ctx, vicedb, j); err != nil {
 					log.Error(err)
 					span.End()
