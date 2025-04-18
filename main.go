@@ -563,7 +563,7 @@ func main() {
 				}
 
 				// If the analysis to terminate isn't in the cluster, mark it as completed through
-				// app-exposer.
+				// job-status-listener.
 				if !found {
 					log.Infof("analysis with external ID %s was not found in the cluster", j.ExternalID)
 
