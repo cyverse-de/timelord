@@ -39,15 +39,15 @@ func (j *JobKiller) KillJob(ctx context.Context, job *Job) error {
 	if j.K8sEnabled {
 		return j.killK8sJob(ctx, job)
 	}
-	return j.killCondorJob(ctx, job.ID, job.User)
+	return j.killBatchAnalysis(ctx, job.ID, job.User)
 
 }
 
-// killCondorJob uses the provided API at the base URL to kill a running job. This
+// killBatchAnalysis uses the provided API at the base URL to kill a running job. This
 // will probably be to the apps service. jobID should be the UUID for the Job,
 // typically returned in the ID field by the analyses service. The username
 // should be the short username for the user that launched the job.
-func (j *JobKiller) killCondorJob(ctx context.Context, jobID, username string) error {
+func (j *JobKiller) killBatchAnalysis(ctx context.Context, jobID, username string) error {
 	return j.appExposer.StopAnalyses(ctx, jobID, username)
 }
 
