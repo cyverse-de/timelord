@@ -110,15 +110,5 @@ func (j *JobKiller) checkForAnalysisInCluster(ctx context.Context, analysis *Ana
 // killK8sJob uses the app-exposer API to make a job save its outputs and exit.
 // JobID should be the external_id (AKA invocationID) for the job.
 func (j *JobKiller) killK8sJob(ctx context.Context, job *Job) error {
-	found, err := j.checkForAnalysisInCluster(ctx, job)
-	if err != nil {
-		return err
-	}
-
-	// Only terminate an analysis if it's actually running in the cluster.
-	if found {
-		return j.requestAnalysisTermination(ctx, job)
-	}
-
-	return j.sendCompletedStatus(ctx, job)
+	return j.requestAnalysisTermination(ctx, job)
 }
