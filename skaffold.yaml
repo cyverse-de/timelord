@@ -1,14 +1,17 @@
-apiVersion: skaffold/v1
+apiVersion: skaffold/v3
 kind: Config
 metadata:
   name: timelord
-deploy:
-  kubectl:
-    manifests:
-    - k8s/timelord.yml
 build:
+  artifacts:
+    - image: harbor.cyverse.org/de/timelord
+  platforms:
+    - linux/amd64
   tagPolicy:
     gitCommit: {}
-  artifacts:
-  - image: harbor.cyverse.org/de/timelord
   local: {}
+manifests:
+  rawYaml:
+    - k8s/timelord.yml
+deploy:
+  kubectl: {}
