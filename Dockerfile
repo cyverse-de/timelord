@@ -17,7 +17,7 @@ ENV GOARCH=amd64
 RUN go build -ldflags "-X main.appver=$version -X main.gitref=$git_commit" ./...
 
 ## Second stage
-FROM scratch
+FROM debian:stable-slim
 
 COPY --from=build-root /build/timelord /
 
