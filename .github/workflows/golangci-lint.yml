@@ -8,6 +8,6 @@ on:
 
 jobs:
   call-workflow-passing-data:
-    uses: cyverse-de/github-workflows/.github/workflows/golangci-lint.yml@v0.2.1
+    uses: cyverse-de/github-workflows/.github/workflows/golangci-lint.yml@v0.2.4
     with:
-      go-version: 1.25
+      go-version: 1.26

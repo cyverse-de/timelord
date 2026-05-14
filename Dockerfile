@@ -1,5 +1,5 @@
 ## First stage
-FROM golang:1.25 AS build-root
+FROM golang:1.26 AS build-root
 
 WORKDIR /build
 
