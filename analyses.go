@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cyverse-de/messaging/v11"
-	pq "github.com/lib/pq"
 	"github.com/pkg/errors"
 	amqp "github.com/rabbitmq/amqp091-go"
 	log "github.com/sirupsen/logrus"
@@ -105,8 +104,8 @@ func (a *TimelordAnalyses) jobFromRow(ctx context.Context, rows *sql.Rows) (Job,
 	var (
 		err            error
 		job            Job
-		startDate      pq.NullTime
-		plannedEndDate pq.NullTime
+		startDate      sql.NullTime
+		plannedEndDate sql.NullTime
 		subdomain      sql.NullString
 	)
 
@@ -384,8 +383,8 @@ func (a *TimelordAnalyses) lookupByExternalID(ctx context.Context, externalID st
 		err            error
 		job            *Job
 		subdomain      sql.NullString
-		startDate      pq.NullTime
-		plannedEndDate pq.NullTime
+		startDate      sql.NullTime
+		plannedEndDate sql.NullTime
 	)
 
 	job = &Job{}
