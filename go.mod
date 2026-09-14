@@ -9,7 +9,7 @@ require (
 	github.com/cyverse-de/messaging/v11 v11.0.2
 	github.com/lib/pq v1.12.3
 	github.com/pkg/errors v0.9.1
-	github.com/rabbitmq/amqp091-go v1.11.0
+	github.com/rabbitmq/amqp091-go v1.13.0
 	github.com/sanyokbig/pqinterval v1.1.2
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/viper v1.21.0
